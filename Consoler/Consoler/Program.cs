@@ -75,9 +75,15 @@ try
         }
         Console.Write($"{app.Versao} --> {app.Disponivel}");
         Console.ResetColor();
-        Console.WriteLine($" - disponível");
-
-        appsFoundToUpdate.Add(app);
+        if(compare < 0)
+        {
+            Console.WriteLine($" - disponível");
+            appsFoundToUpdate.Add(app);
+        }
+        else
+        {
+            Console.WriteLine();
+        }
     }
     Console.WriteLine();
     Console.WriteLine();
