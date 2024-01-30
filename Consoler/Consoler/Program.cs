@@ -59,8 +59,7 @@ try
 
         Console.Write($"{app.ID,-18} - {app.Nome,-18} ");
 
-        int minSize = Math.Min(app.Versao.Length, app.Disponivel.Length);
-        int compare = string.Compare(app.Versao[..minSize], app.Disponivel[..minSize], StringComparison.InvariantCultureIgnoreCase);
+        int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
         if (compare > 0)
         {
             Console.ForegroundColor = ConsoleColor.Red;
@@ -69,7 +68,7 @@ try
         {
             Console.ForegroundColor = ConsoleColor.Green;
         }
-        else
+        else 
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
         }

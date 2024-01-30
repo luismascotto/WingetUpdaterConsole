@@ -45,6 +45,28 @@ public class Functions
 
         return destString;
     }
+
+    public static int VersionComparer(string actual, string found)
+    {
+        var my = actual.Split('.');
+        var other = found.Split('.');
+
+        int iMinLen = Math.Min(my.Length, other.Length);
+
+        for (int i = 0; i < iMinLen; i++)
+        {
+            if (int.Parse(my[i]) > int.Parse(other[i]))
+            {
+                return 1;
+            }
+            if (int.Parse(my[i]) < int.Parse(other[i]))
+            {
+                return -1;
+            }
+        }
+
+        return 0;
+    }
 }
 
 
