@@ -36,7 +36,7 @@ public class Functions
     public static string GetWindows1252fromUtf8(string utf8)
     {
         var srcEncoding = Encoding.UTF8; // utf-8
-        var destEncoding = Encoding.ASCII;
+        var destEncoding = Encoding.Default;
         //var destEncoding = Encoding.GetEncoding(Encoding.Latin1); // windows-1252
 
         // convert the source bytes to the destination bytes
@@ -48,25 +48,38 @@ public class Functions
 
     public static int VersionComparer(string actual, string found)
     {
-        var my = actual.Split('.');
-        var other = found.Split('.');
-
-        int iMinLen = Math.Min(my.Length, other.Length);
-
-        for (int i = 0; i < iMinLen; i++)
+        try
         {
-            if (int.Parse(my[i]) > int.Parse(other[i]))
-            {
-                return 1;
-            }
-            if (int.Parse(my[i]) < int.Parse(other[i]))
-            {
-                return -1;
-            }
-        }
+            var my = actual.Split('.');
+            var other = found.Split('.');
 
-        return 0;
+            int iMinLen = Math.Min(my.Length, other.Length);
+
+            for (int i = 0; i < iMinLen; i++)
+            {
+                if (int.Parse(my[i]) > int.Parse(other[i]))
+                {
+                    return 1;
+                }
+                if (int.Parse(my[i]) < int.Parse(other[i]))
+                {
+                    return -1;
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ########");
+            Console.WriteLine(ex.Message);
+            Console.ResetColor();
+            return 1;
+        }
     }
+
+   
 }
 
 

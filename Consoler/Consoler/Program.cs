@@ -1,4 +1,5 @@
 ﻿using CliWrap;
+using CliWrap.Buffered;
 using Consoler;
 using System.Globalization;
 using System.Text;
@@ -12,8 +13,10 @@ try
     _ = Functions.WriteLoader(ctsDots!.Token);
     await Cli.Wrap("winget")
         .WithArguments(new[] { "update" })
-        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(Functions.GetWindows1252fromUtf8(str))))
+        //.WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(Functions.GetWindows1252fromUtf8(str))))
+        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
         .ExecuteAsync();
+        //.ExecuteBufferedAsync(Encoding.Default, Encoding.Latin1);
     ctsDots.Cancel();
     Console.WriteLine();
 
@@ -43,12 +46,37 @@ try
     for (int i = 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains("winget"); i++)
     {
         var appName = lines[i][..(indexID - 1)].TrimEnd();
-        var lineTrailSplit = lines[i][indexID..].Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        while (appName.Length > 0 && (!char.IsAsciiLetter(appName[^1]) || char.IsWhiteSpace(appName[^1])))
+        {
+            appName = appName[..^1];
+        }
+        if (appName.Length == 0)
+        {
+            Console.WriteLine($"Erro ao ler ({lines[i]})");
+            continue;
+        }
+        int adjustedIndexID = indexID;
+        while (adjustedIndexID < lines[i].Length-1 && (!char.IsAsciiLetter(lines[i][adjustedIndexID]) || char.IsWhiteSpace(lines[i][adjustedIndexID])))
+        {
+            adjustedIndexID++;
+        }
+        if (adjustedIndexID > indexID + 4)
+        {
+            Console.WriteLine($"Erro ao ler {appName} ({lines[i]})");
+            continue;
+        }
+
+        var lineTrailSplit = lines[i][adjustedIndexID..].Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (lineTrailSplit.Length < 3)
         {
             Console.WriteLine($"Erro ao ler {appName} ({lines[i]})");
             continue;
         }
+
+        //else if (!char.IsDigit(lineTrailSplit[1][0]) && char.IsDigit(lineTrailSplit[2][0]) && char.IsDigit(lineTrailSplit[3][0]))
+        //{
+        //    lineTrailSplit = new[] { $"{lineTrailSplit[0]} {lineTrailSplit[1]}", lineTrailSplit[2], lineTrailSplit[3] };
+        //}
         var app = new App
         {
             Nome = appName,
@@ -56,7 +84,7 @@ try
             Versao = lineTrailSplit[1],
             Disponivel = lineTrailSplit[2],
         };
-
+        
         Console.Write($"{app.ID,-18} - {app.Nome,-18} ");
 
         int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
