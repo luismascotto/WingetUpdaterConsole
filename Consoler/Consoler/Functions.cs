@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Data.SqlTypes;
 using System.Linq;
 using System.Text;
@@ -9,6 +10,7 @@ namespace Consoler;
 
 public class Functions
 {
+    private static string SpacesWindowWidth = new(' ', Console.WindowWidth);
     //Write a function that writes dots on console until receives a cancellation token
     public static async Task WriteDotsAsync(CancellationToken cancellationToken)
     {
@@ -45,7 +47,34 @@ public class Functions
 
         return destString;
     }
+    public static string GetUTF8(string text)
+    {
+        Encoding utf8 = Encoding.GetEncoding("UTF-8");
+        Encoding latin = Encoding.Latin1;
 
+        byte[] win1251Bytes = latin.GetBytes(text);
+        byte[] utf8Bytes = Encoding.Convert(latin, utf8, win1251Bytes);
+
+        return utf8.GetString(win1251Bytes);
+    }
+
+    public static void ClearCurrentConsoleLine(int extraLinesUp = 0)
+    {
+        int currentLine = Console.CursorTop;
+        int desiredLine = Console.CursorTop - extraLinesUp;
+        if (desiredLine <= 0)
+        {
+            Console.Clear();
+            Console.SetCursorPosition(0, 0);
+            return;
+        }
+        do
+        {
+            Console.SetCursorPosition(0, Console.CursorTop);
+            Console.Write(new string(' ', Console.WindowWidth));
+            Console.SetCursorPosition(0, --currentLine);
+        } while (extraLinesUp-- > 0);
+    }
     public static int VersionComparer(string actual, string found)
     {
         try
@@ -72,14 +101,61 @@ public class Functions
         catch (Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ########");
-            Console.WriteLine(ex.Message);
+            Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ######## {ex.Message}");
             Console.ResetColor();
-            return 1;
+            Thread.Sleep(100);
+            return 2;
         }
     }
 
-   
+    public static void RevertLastWrite(int previousCol, int previousLine)
+    {
+        int currentLine = Console.CursorTop;
+        int currentCol = Console.CursorLeft;
+
+        while (currentLine >= previousLine)
+        {
+            if (currentLine == previousLine)
+            {
+                Console.SetCursorPosition(previousCol, currentLine);
+            }
+            else
+            {
+                Console.SetCursorPosition(0, currentLine);
+            }
+            Console.Write(SpacesWindowWidth);
+            Console.SetCursorPosition(0, --currentLine);
+        }
+
+        Console.SetCursorPosition(previousCol, previousLine);
+    }
+
+    public static void RevertLastWriteEx(int previousCol, int previousLine)
+    {
+        int col, lin, moves = 0;
+        while (((col, lin) = Console.GetCursorPosition()) != (previousCol, previousLine))
+        {
+            if (Console.CursorTop <= previousLine && Console.CursorLeft <= previousCol)
+            {
+                break;
+            }
+            Console.Write("\b ");
+            if (++moves % 5 == 0)
+            {
+                Thread.Sleep(2);
+            }
+            //Check safety
+            col--;
+            if (col < 0)
+            {
+                col = Console.WindowWidth - 1;
+                lin--;
+            }
+            Console.SetCursorPosition(col, lin);
+        }
+    }
+
+
 }
 
 

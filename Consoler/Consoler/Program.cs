@@ -4,6 +4,8 @@ using Consoler;
 using System.Globalization;
 using System.Text;
 
+var arguments = new[] { "update" };
+
 var strBuilder = new StringBuilder();
 Thread.CurrentThread.CurrentCulture = new CultureInfo("pt-BR");
 Console.WriteLine($"\t\tWINGET");
@@ -12,12 +14,13 @@ try
     var ctsDots = new CancellationTokenSource();
     _ = Functions.WriteLoader(ctsDots!.Token);
     await Cli.Wrap("winget")
-        .WithArguments(new[] { "update" })
-        //.WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(Functions.GetWindows1252fromUtf8(str))))
-        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
+        .WithArguments(arguments)
+        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(Functions.GetUTF8(str))))
+        //.WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
         .ExecuteAsync();
         //.ExecuteBufferedAsync(Encoding.Default, Encoding.Latin1);
     ctsDots.Cancel();
+    Console.WriteLine();
     Console.WriteLine();
 
     //Console.WriteLine(strBuilder.ToString());
@@ -42,7 +45,7 @@ try
     int VersaoSize = lines[0].IndexOf("Dispon") - indexVersao;
 
     int iUpdates = 0;
-    List<App> appsFoundToUpdate = new();
+    List<App> appsFoundToUpdate = [];
     for (int i = 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains("winget"); i++)
     {
         var appName = lines[i][..(indexID - 1)].TrimEnd();
@@ -85,10 +88,14 @@ try
             Disponivel = lineTrailSplit[2],
         };
         
-        Console.Write($"{app.ID,-18} - {app.Nome,-18} ");
-
+        var (column, line) = Console.GetCursorPosition();
         int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
-        if (compare > 0)
+        if (compare > 1)
+        {
+            Functions.RevertLastWriteEx(column, line);
+            continue;
+        }
+        else if (compare > 0)
         {
             Console.ForegroundColor = ConsoleColor.Red;
         }
@@ -100,7 +107,7 @@ try
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
         }
-        Console.Write($"{app.Versao} --> {app.Disponivel}");
+        Console.Write($"{app.ID,-18} - {app.Nome,-18} {app.Versao} --> {app.Disponivel}");
         Console.ResetColor();
         if(compare < 0)
         {
@@ -114,7 +121,7 @@ try
     }
     Console.WriteLine();
     Console.WriteLine();
-    List<string> appsToUpdate = new();
+    List<string> appsToUpdate = [];
     foreach (var app in appsFoundToUpdate)
     {
         Console.Write($"Atualizar {app.Nome}? Y/N: ");
