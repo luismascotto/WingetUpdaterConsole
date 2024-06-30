@@ -154,8 +154,6 @@ public class Functions
             Console.SetCursorPosition(col, lin);
         }
     }
-
-
 }
 
 
