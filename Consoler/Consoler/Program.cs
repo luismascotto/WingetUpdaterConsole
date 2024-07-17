@@ -159,11 +159,11 @@ public class Program
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
             }
-            if (app.ID.StartsWith("Microsoft.DotNet."))
-            {
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                compare = 0;
-            }
+            //if (app.ID.StartsWith("Microsoft.DotNet."))
+            //{
+            //    Console.ForegroundColor = ConsoleColor.DarkGray;
+            //    compare = 0;
+            //}
             Console.Write($"{app.ID,-18} - {app.Nome,-18} {app.Versao} --> {app.Disponivel}");
             Console.ResetColor();
             if (compare < 0)
@@ -175,7 +175,9 @@ public class Program
                 }
                 else
                 {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
                     Console.Write($" PORÉM ignorado...");
+                    Console.ResetColor();
                 }
             }
             Console.WriteLine();
