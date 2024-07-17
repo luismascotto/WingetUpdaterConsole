@@ -56,7 +56,7 @@ public class Program
 
             if (!fullOutput.Contains("Nome") || !fullOutput.Contains("ID"))
             {
-                Console.WriteLine("Dados nao conferem");
+                Console.WriteLine("Dados não conferem");
                 return;
             }
 
@@ -113,6 +113,7 @@ public class Program
                 Console.WriteLine($"Erro ao ler ({lines[i]})");
                 continue;
             }
+
             int adjustedIndexID = indexID;
             while (adjustedIndexID < lines[i].Length - 1 && (!char.IsAsciiLetter(lines[i][adjustedIndexID]) || char.IsWhiteSpace(lines[i][adjustedIndexID])))
             {
@@ -141,43 +142,44 @@ public class Program
 
             var (column, line) = Console.GetCursorPosition();
             int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
+            bool isIgnored = false;
             if (compare > 1)
             {
                 Functions.RevertLastWriteEx(column, line);
                 continue;
             }
 
-            else if (compare > 0)
+            if (compare > 0)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
             }
             else if (compare < 0)
             {
-                Console.ForegroundColor = ConsoleColor.Green;
+                isIgnored = appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel);
+                if (isIgnored)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGreen;
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    appsFoundToUpdate.Add(app);
+                }
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
             }
-            //if (app.ID.StartsWith("Microsoft.DotNet."))
-            //{
-            //    Console.ForegroundColor = ConsoleColor.DarkGray;
-            //    compare = 0;
-            //}
+
+
             Console.Write($"{app.ID,-18} - {app.Nome,-18} {app.Versao} --> {app.Disponivel}");
             Console.ResetColor();
             if (compare < 0)
             {
                 Console.Write($" - disponível");
-                if (!appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel))
+                if (isIgnored)
                 {
-                    appsFoundToUpdate.Add(app);
-                }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
                     Console.Write($" PORÉM ignorado...");
-                    Console.ResetColor();
                 }
             }
             Console.WriteLine();
@@ -213,15 +215,15 @@ public class Program
         int iUpdates = ProcessUpdates(appsToUpdate);
         if (iUpdates == 0)
         {
-            Console.WriteLine("Nenhum update disponivel");
+            Console.WriteLine("Nenhum update disponível");
         }
         else
         {
-            Console.WriteLine($"{iUpdates} atualizac{(iUpdates == 1 ? "ao" : "oes")} realizada{(iUpdates == 1 ? "" : "s")}");
+            Console.WriteLine($"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
         }
 
 
-        Task.WaitAny([Task.Delay(5000), Task.Run(() => Console.ReadKey())]);
+        Task.WaitAny([Task.Delay(iUpdates == 0 ? 3000 : 5000), Task.Run(() => Console.ReadKey())]);
     }
 
     private static int ProcessUpdates(List<string> appsToUpdate)
