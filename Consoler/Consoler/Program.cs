@@ -1,6 +1,7 @@
 ﻿using CliWrap;
 using CliWrap.Buffered;
 using Consoler;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 
@@ -44,7 +45,8 @@ public class Program
             string fullOutput = strBuilder.ToString();
             try
             {
-                File.WriteAllLines($"wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", [fullOutput]);
+                string strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
+                File.WriteAllLines($"{strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", [fullOutput]);
             }
             catch (Exception ex)
             {
@@ -104,7 +106,7 @@ public class Program
         for (int i = 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains("winget"); i++)
         {
             var appName = lines[i][..(indexID - 1)].TrimEnd();
-            while (appName.Length > 0 && (!char.IsAsciiLetter(appName[^1]) || char.IsWhiteSpace(appName[^1])))
+            while (appName.Length > 0 && (!char.IsAsciiLetterOrDigit(appName[^1]) || char.IsWhiteSpace(appName[^1])))
             {
                 appName = appName[..^1];
             }
@@ -115,7 +117,7 @@ public class Program
             }
 
             int adjustedIndexID = indexID;
-            while (adjustedIndexID < lines[i].Length - 1 && (!char.IsAsciiLetter(lines[i][adjustedIndexID]) || char.IsWhiteSpace(lines[i][adjustedIndexID])))
+            while (adjustedIndexID < lines[i].Length - 1 && (!char.IsAsciiLetterOrDigit(lines[i][adjustedIndexID]) || char.IsWhiteSpace(lines[i][adjustedIndexID])))
             {
                 adjustedIndexID++;
             }
