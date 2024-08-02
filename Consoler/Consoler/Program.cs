@@ -103,6 +103,8 @@ public class Program
         }
 
         List<App> appsFoundToUpdate = [];
+        int namePaddingLength = 18;
+        int idPaddingLength = 10;
         for (int i = 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains("winget"); i++)
         {
             var appName = lines[i][..(indexID - 1)].TrimEnd();
@@ -134,14 +136,33 @@ public class Program
                 continue;
             }
 
-            var app = new App
+            appsFoundToUpdate.Add(new App
             {
                 Nome = appName,
                 ID = lineTrailSplit[0],
                 Versao = lineTrailSplit[1],
                 Disponivel = lineTrailSplit[2],
-            };
+            });
 
+            //Padding
+            if (appName.Length > namePaddingLength)
+            {
+                namePaddingLength = appName.Length;
+            }
+            if (lineTrailSplit[0].Length > idPaddingLength)
+            {
+                idPaddingLength = lineTrailSplit[0].Length;
+            }
+        }
+        lines = null;
+
+        List<App> appsAbleToUpdate = [];
+        string nameFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Nome.Length)}}}";
+        string idFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.ID.Length)}}}";
+        string curVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Versao.Length)}}}";
+        string avlbVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Disponivel.Length)}}}";
+        foreach (var app in appsFoundToUpdate)
+        {
             var (column, line) = Console.GetCursorPosition();
             int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
             bool isIgnored = false;
@@ -160,12 +181,12 @@ public class Program
                 isIgnored = appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel);
                 if (isIgnored)
                 {
-                    Console.ForegroundColor = ConsoleColor.DarkGreen;
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
                 }
                 else
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
-                    appsFoundToUpdate.Add(app);
+                    appsAbleToUpdate.Add(app);
                 }
             }
             else
@@ -173,8 +194,11 @@ public class Program
                 Console.ForegroundColor = ConsoleColor.Yellow;
             }
 
-
-            Console.Write($"{app.ID,-18} - {app.Nome,-18} {app.Versao} --> {app.Disponivel}");
+            Console.Write(idFmt, app.ID);
+            Console.Write(" ");
+            Console.Write(curVerFmt, app.Versao);
+            Console.Write(" --> ");
+            Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
             if (compare < 0)
             {
@@ -186,12 +210,16 @@ public class Program
             }
             Console.WriteLine();
         }
+        appsFoundToUpdate.Shrink();
+        appsToIgnore.Shrink();
+
         Console.WriteLine();
         Console.WriteLine();
+
         List<string> appsToUpdate = [];
-        foreach (var app in appsFoundToUpdate)
+        foreach (var app in appsAbleToUpdate)
         {
-            Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im  - [N]o/N[a]o  - [I]gnore/I[g]norar: ");
+            Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
             var key = Console.ReadKey(true);
             Console.Write("\b");
             Console.WriteLine();
@@ -225,7 +253,7 @@ public class Program
         }
 
 
-        Task.WaitAny([Task.Delay(iUpdates == 0 ? 3000 : 5000), Task.Run(() => Console.ReadKey())]);
+        Task.WaitAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)]);
     }
 
     private static int ProcessUpdates(List<string> appsToUpdate)
@@ -239,7 +267,7 @@ public class Program
                 Console.WriteLine();
                 Console.Write($"Atualizando {appID} ");
                 _ = Functions.WriteLoader(ctsDotsUpdate!.Token);
-                Cli.Wrap("winget").WithArguments(new[] { "update", appID }).ExecuteAsync().GetAwaiter().GetResult();
+                Cli.Wrap("winget").WithArguments(["update", appID]).ExecuteAsync().GetAwaiter().GetResult();
                 Console.WriteLine();
                 Console.WriteLine($"{appID} atualizado");
                 iUpdates++;
