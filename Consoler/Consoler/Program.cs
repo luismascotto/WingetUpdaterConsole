@@ -16,23 +16,29 @@ public class Program
         public string Disponivel;
     }
 
-    private const string _ignoredAppsFilename = "ignored.dat";
-    private static void Main()
-    {
-        var arguments = new[] { "update" };
+    //private const int _DAYSTOKEEPLOGS = 14;
+    private const int _QTY_LOGS = 10;
 
+    private const string _ignoredAppsFilename = "ignored.dat";
+
+    private static string? _strPath;
+
+    private static async Task Main()
+    {
+        Console.OutputEncoding = Encoding.UTF8;
+        _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
         var strBuilder = new StringBuilder();
         Console.WriteLine($"\t\tWINGET");
+        var ctsDots = new CancellationTokenSource();
         try
         {
-            var ctsDots = new CancellationTokenSource();
             _ = Functions.WriteLoader(ctsDots!.Token);
-            Cli.Wrap("winget")
-                .WithArguments(arguments)
+            await Cli.Wrap("winget")
+                .WithArguments(["update"])
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
-                .ExecuteAsync().GetAwaiter().GetResult();
+                .ExecuteAsync();
             ctsDots.Cancel();
-
+            Console.Write("\b");
             if (strBuilder.Length == 0)
             {
                 Console.WriteLine("EMPTY");
@@ -45,8 +51,8 @@ public class Program
             string fullOutput = strBuilder.ToString();
             try
             {
-                string strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
-                File.WriteAllLines($"{strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", [fullOutput]);
+                await LogsMaintenance();
+                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", fullOutput);
             }
             catch (Exception ex)
             {
@@ -62,18 +68,28 @@ public class Program
                 return;
             }
 
-            ProcessList(fullOutput);
+            await ProcessListAsync(fullOutput);
 
         }
         catch (Exception ex)
         {
-            Console.WriteLine("Erro ao atualizar...");
-            Console.WriteLine(ex.Message);
+            ctsDots.Cancel();
+            Console.Write("\b");
+            Console.WriteLine("\bErro ao atualizar...");
+            Console.WriteLine(ex.ToString());
+            try
+            {
+                await File.AppendAllTextAsync($"{_strPath}exception_main_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
+            }
+            catch
+            {
+            }
+            Console.ReadLine();
             Environment.FailFast(ex.ToString());
         }
     }
 
-    private static void ProcessList(string fullOutput)
+    private static async Task ProcessListAsync(string fullOutput)
     {
         var content = fullOutput[fullOutput.IndexOf("Nome")..];
         var lines = content.Split(Environment.NewLine);
@@ -221,7 +237,7 @@ public class Program
         {
             Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
             var key = Console.ReadKey(true);
-            Console.Write("\b");
+            //Console.Write("\b");
             Console.WriteLine();
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
@@ -232,7 +248,7 @@ public class Program
             {
                 try
                 {
-                    File.AppendAllText(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}");
+                    await File.AppendAllTextAsync(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}");
                     Console.WriteLine($"{app.Nome} ignorado");
                 }
                 catch (Exception ex)
@@ -242,7 +258,7 @@ public class Program
             }
         }
 
-        int iUpdates = ProcessUpdates(appsToUpdate);
+        int iUpdates = await ProcessUpdatesAsync(appsToUpdate);
         if (iUpdates == 0)
         {
             Console.WriteLine("Nenhum update disponível");
@@ -256,9 +272,10 @@ public class Program
         Task.WaitAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)]);
     }
 
-    private static int ProcessUpdates(List<string> appsToUpdate)
+    private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate)
     {
         int iUpdates = 0;
+        var strBuilder = new StringBuilder();
         foreach (string appID in appsToUpdate)
         {
             var ctsDotsUpdate = new CancellationTokenSource();
@@ -267,19 +284,32 @@ public class Program
                 Console.WriteLine();
                 Console.Write($"Atualizando {appID} ");
                 _ = Functions.WriteLoader(ctsDotsUpdate!.Token);
-                Cli.Wrap("winget").WithArguments(["update", appID]).ExecuteAsync().GetAwaiter().GetResult();
+                await Cli.Wrap("winget")
+                    .WithArguments(["update", appID])
+                    .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
+                    .ExecuteAsync();
+                ctsDotsUpdate.Cancel();
+                Console.Write("\b");
                 Console.WriteLine();
                 Console.WriteLine($"{appID} atualizado");
                 iUpdates++;
+                strBuilder.Clear();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"{appID} EXCEPTION");
-                Console.WriteLine(ex.Message);
-            }
-            finally
-            {
                 ctsDotsUpdate.Cancel();
+                Console.Write("\b");
+                Console.WriteLine();
+                Console.WriteLine($"{appID} EXCEPTION");
+                Console.WriteLine(strBuilder.ToString());
+                try
+                {
+                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
+                }
+                catch
+                {
+                }
+                Console.ReadKey(true);
             }
 
             Console.WriteLine();
@@ -287,5 +317,30 @@ public class Program
         }
 
         return iUpdates;
+    }
+    static async Task LogsMaintenance()
+    {
+        //scan for old logs
+        var files = Directory.GetFiles(_strPath!, "wingetOutput_*.txt");
+        if (files.Length > _QTY_LOGS)
+        {
+            Array.Sort(files);
+
+            await Task.WhenAll(files[..^_QTY_LOGS].Select(async file => await Task.Run(() =>
+            {
+                try
+                {
+                    //Console.WriteLine($"Deletando {file}..");
+                    //Task.Delay(5000).Wait();
+                    File.Delete(file);
+                    //Console.WriteLine($"Deletou {file}..");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"\bErro ao deletar {file}: {ex}");
+                }
+            })));
+
+        }
     }
 }

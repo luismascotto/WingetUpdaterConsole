@@ -28,9 +28,14 @@ public class Functions
         while (!cancellationToken.IsCancellationRequested)
         {
             Console.Write(ch[i % ch.Length]);
-
-            await Task.Delay(250, cancellationToken);
-            Console.Write("\b");
+            try
+            {
+                await Task.Delay(250, cancellationToken);
+            }
+            finally
+            {
+                Console.Write("\b");
+            }
             i++;
         }
     }
