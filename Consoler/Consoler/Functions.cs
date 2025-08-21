@@ -84,6 +84,10 @@ public class Functions
     {
         try
         {
+            if(actual.Contains('<') || found.Contains('>'))
+            {
+                return 0; // Do not compare versions
+            }
             var my = actual.Split('.');
             var other = found.Split('.');
 
