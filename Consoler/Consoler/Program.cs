@@ -30,12 +30,14 @@ public class Program
         var strBuilder = new StringBuilder();
         Console.WriteLine($"\t\tWINGET");
         var ctsDots = new CancellationTokenSource();
+        var ctsMain = new CancellationTokenSource();
         try
         {
             _ = Functions.WriteLoader(ctsDots!.Token);
             await Cli.Wrap("winget")
-                .WithArguments(["update"])
+                .WithArguments(["upgrade", "--silent"])
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
+                .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync();
             ctsDots.Cancel();
             Console.Write("\b");
@@ -47,12 +49,11 @@ public class Program
 
             Console.WriteLine();
             Console.WriteLine();
-
             string fullOutput = strBuilder.ToString();
             try
             {
-                await LogsMaintenance();
-                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", fullOutput);
+                await LogsMaintenanceAsync(ctsMain!.Token).ConfigureAwait(false);
+                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", fullOutput, ctsMain!.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -68,18 +69,19 @@ public class Program
                 return;
             }
 
-            await ProcessListAsync(fullOutput);
+            await ProcessListAsync(fullOutput, ctsMain!.Token).ConfigureAwait(false);
 
         }
         catch (Exception ex)
         {
             ctsDots.Cancel();
+            ctsMain.Cancel();
             Console.Write("\b");
             Console.WriteLine("\bErro ao atualizar...");
             Console.WriteLine(ex.ToString());
             try
             {
-                await File.AppendAllTextAsync($"{_strPath}exception_main_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
+                File.AppendAllText($"{_strPath}exception_main_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
             }
             catch
             {
@@ -89,14 +91,14 @@ public class Program
         }
     }
 
-    private static async Task ProcessListAsync(string fullOutput)
+    private static async Task ProcessListAsync(string fullOutput, CancellationToken token)
     {
         var content = fullOutput[fullOutput.IndexOf("Nome")..];
         var lines = content.Split(Environment.NewLine);
         int indexID = lines[0].IndexOf("ID");
         int IDSize = lines[0].IndexOf("Vers") - indexID;
         int indexVersao = lines[0].IndexOf("Vers");
-        int VersaoSize = lines[0].IndexOf("Dispon") - indexVersao;
+        //int VersaoSize = lines[0].IndexOf("Dispon") - indexVersao;
 
         List<App> appsToIgnore = [];
         if (File.Exists(_ignoredAppsFilename))
@@ -172,6 +174,11 @@ public class Program
         }
         lines = null;
 
+        if (appsFoundToUpdate.Count == 0)
+        {
+            Console.WriteLine("Nenhum app encontrado para atualizar");
+            return;
+        }
         List<App> appsAbleToUpdate = [];
         string nameFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Nome.Length)}}}";
         string idFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.ID.Length)}}}";
@@ -248,7 +255,7 @@ public class Program
             {
                 try
                 {
-                    await File.AppendAllTextAsync(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}");
+                    await File.AppendAllTextAsync(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}").ConfigureAwait(false);
                     Console.WriteLine($"{app.Nome} ignorado");
                 }
                 catch (Exception ex)
@@ -258,7 +265,7 @@ public class Program
             }
         }
 
-        int iUpdates = await ProcessUpdatesAsync(appsToUpdate);
+        int iUpdates = await ProcessUpdatesAsync(appsToUpdate, token).ConfigureAwait(false);
         if (iUpdates == 0)
         {
             Console.WriteLine("Nenhum update disponível");
@@ -269,10 +276,10 @@ public class Program
         }
 
 
-        Task.WaitAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)]);
+        await Task.WhenAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)]).ConfigureAwait(false);
     }
 
-    private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate)
+    private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate, CancellationToken token)
     {
         int iUpdates = 0;
         var strBuilder = new StringBuilder();
@@ -287,7 +294,8 @@ public class Program
                 await Cli.Wrap("winget")
                     .WithArguments(["update", appID])
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
-                    .ExecuteAsync();
+                    .ExecuteAsync(token)
+                    .ConfigureAwait(false);
                 ctsDotsUpdate.Cancel();
                 Console.Write("\b");
                 Console.WriteLine();
@@ -304,7 +312,7 @@ public class Program
                 Console.WriteLine(strBuilder.ToString());
                 try
                 {
-                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
+                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString(), token).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -318,7 +326,7 @@ public class Program
 
         return iUpdates;
     }
-    static async Task LogsMaintenance()
+    private static async Task LogsMaintenanceAsync(CancellationToken token)
     {
         //scan for old logs
         var files = Directory.GetFiles(_strPath!, "wingetOutput_*.txt");
@@ -339,7 +347,7 @@ public class Program
                 {
                     Console.WriteLine($"\bErro ao deletar {file}: {ex}");
                 }
-            })));
+            }).ConfigureAwait(false))).ConfigureAwait(false);
 
         }
     }
