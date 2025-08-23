@@ -25,4 +25,10 @@ public static class Extensions
             list.TrimExcess();
         }
     }
+
+    public static string MyFileTimestamp(this DateTime dt)
+    {
+        //{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}
+        return $"{dt:yyyy-MM-dd}_{dt.Ticks:X16}"; //2023-11-03_000000018E1F6C80
+    }
 }

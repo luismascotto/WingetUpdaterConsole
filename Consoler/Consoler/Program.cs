@@ -1,6 +1,7 @@
 ﻿using CliWrap;
 using CliWrap.Buffered;
 using Consoler;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -35,7 +36,7 @@ public class Program
         {
             _ = Functions.WriteLoader(ctsDots!.Token);
             await Cli.Wrap("winget")
-                .WithArguments(["upgrade", "--silent"])
+                .WithArguments("upgrade")
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync();
@@ -53,7 +54,8 @@ public class Program
             try
             {
                 await LogsMaintenanceAsync(ctsMain!.Token).ConfigureAwait(false);
-                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", fullOutput, ctsMain!.Token).ConfigureAwait(false);
+                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now.MyFileTimestamp()}.txt", fullOutput, ctsMain!.Token)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -81,7 +83,7 @@ public class Program
             Console.WriteLine(ex.ToString());
             try
             {
-                File.AppendAllText($"{_strPath}exception_main_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString());
+                File.AppendAllText($"{_strPath}exception_main_{DateTime.Now.MyFileTimestamp()}.txt", ex.ToString());
             }
             catch
             {
@@ -242,12 +244,15 @@ public class Program
         List<string> appsToUpdate = [];
         foreach (var app in appsAbleToUpdate)
         {
+            var (column, line) = Console.GetCursorPosition();
             Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
+
             var key = Console.ReadKey(true);
             //Console.Write("\b");
             Console.WriteLine();
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
+                Functions.RevertLastWriteEx(column, line);
                 Console.WriteLine($"{app.Nome} adicionado");
                 appsToUpdate.Add(app.ID);
             }
@@ -255,7 +260,7 @@ public class Program
             {
                 try
                 {
-                    await File.AppendAllTextAsync(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}").ConfigureAwait(false);
+                    await File.AppendAllTextAsync(_ignoredAppsFilename, $"{app.ID} {app.Versao} {app.Disponivel}{Environment.NewLine}", token).ConfigureAwait(false);
                     Console.WriteLine($"{app.Nome} ignorado");
                 }
                 catch (Exception ex)
@@ -276,7 +281,8 @@ public class Program
         }
 
 
-        await Task.WhenAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)]).ConfigureAwait(false);
+        await Task.WhenAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)])
+            .ConfigureAwait(false);
     }
 
     private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate, CancellationToken token)
@@ -292,7 +298,7 @@ public class Program
                 Console.Write($"Atualizando {appID} ");
                 _ = Functions.WriteLoader(ctsDotsUpdate!.Token);
                 await Cli.Wrap("winget")
-                    .WithArguments(["update", appID])
+                    .WithArguments(["update", appID, "--silent"])
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                     .ExecuteAsync(token)
                     .ConfigureAwait(false);
