@@ -128,7 +128,7 @@ public class Program
         for (int i = 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains("winget"); i++)
         {
             var appName = lines[i][..(indexID - 1)].TrimEnd();
-            while (appName.Length > 0 && (!char.IsAsciiLetterOrDigit(appName[^1]) || char.IsWhiteSpace(appName[^1])))
+            while (appName.Length > 0 && !char.IsBetween(appName[^1], '!', '~'))
             {
                 appName = appName[..^1];
             }
@@ -139,7 +139,7 @@ public class Program
             }
 
             int adjustedIndexID = indexID;
-            while (adjustedIndexID < lines[i].Length - 1 && (!char.IsAsciiLetterOrDigit(lines[i][adjustedIndexID]) || char.IsWhiteSpace(lines[i][adjustedIndexID])))
+            while (adjustedIndexID < lines[i].Length - 1 && !char.IsBetween(appName[^1], '!', '~'))
             {
                 adjustedIndexID++;
             }
@@ -155,14 +155,26 @@ public class Program
                 Console.WriteLine($"Erro ao ler {appName} ({lines[i]})");
                 continue;
             }
-
-            appsFoundToUpdate.Add(new App
+            if (lineTrailSplit.Length >= 4 && lineTrailSplit[1] == "<")
             {
-                Nome = appName,
-                ID = lineTrailSplit[0],
-                Versao = lineTrailSplit[1],
-                Disponivel = lineTrailSplit[2],
-            });
+                appsFoundToUpdate.Add(new App
+                {
+                    Nome = appName,
+                    ID = lineTrailSplit[0],
+                    Versao = $"{lineTrailSplit[1]} {lineTrailSplit[2]}",
+                    Disponivel = lineTrailSplit[3],
+                });
+            }
+            else
+            {
+                appsFoundToUpdate.Add(new App
+                {
+                    Nome = appName,
+                    ID = lineTrailSplit[0],
+                    Versao = lineTrailSplit[1],
+                    Disponivel = lineTrailSplit[2],
+                });
+            }
 
             //Padding
             if (appName.Length > namePaddingLength)
@@ -217,6 +229,7 @@ public class Program
             else
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
+                appsAbleToUpdate.Add(app);
             }
 
             Console.Write(idFmt, app.ID);
@@ -225,12 +238,16 @@ public class Program
             Console.Write(" --> ");
             Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
-            if (compare < 0)
+            if (compare <= 0)
             {
                 Console.Write($" - disponível");
                 if (isIgnored)
                 {
                     Console.Write($" PORÉM ignorado...");
+                }
+                else if (compare == 0)
+                {
+                    Console.Write($" - Por sua conta e Risco...");
                 }
             }
             Console.WriteLine();
@@ -250,9 +267,9 @@ public class Program
             var key = Console.ReadKey(true);
             //Console.Write("\b");
             Console.WriteLine();
+            Functions.RevertLastWriteEx(column, line);
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
-                Functions.RevertLastWriteEx(column, line);
                 Console.WriteLine($"{app.Nome} adicionado");
                 appsToUpdate.Add(app.ID);
             }
