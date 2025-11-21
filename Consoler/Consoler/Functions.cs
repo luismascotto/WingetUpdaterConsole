@@ -1,43 +1,186 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data.Common;
-using System.Data.SqlTypes;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace Consoler;
 
 public class Functions
 {
-    private static string SpacesWindowWidth = new(' ', Console.WindowWidth);
+    static readonly string SpacesWindowWidth = new(' ', Console.WindowWidth);
+    static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
     //Write a function that writes dots on console until receives a cancellation token
     public static async Task WriteDotsAsync(CancellationToken cancellationToken)
     {
         var rnd = Random.Shared;
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            Console.Write(".");
-            await Task.Delay(rnd!.Next(50, 500), cancellationToken);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                Console.Write(".");
+                await Task.Delay(rnd!.Next(50, 500), cancellationToken);
+            }
+        }
+        finally
+        {
+            Console.WriteLine();
         }
     }
+
+    private static int i = 0;
+    private static int waitMs = maxWaitMs;
+    private static bool increase = false;
+    private static bool backwards = false;
+
+    private const int minWaitMs = 50;
+    private const int maxWaitMs = 200;
+
+    private const int incrementMs = 20;
+
+    private const int decrementHighMs = 10;
+    private const int decrementMidMs = 10;
+    private const int decrementLowMs = 10;
+    private const int decrementMs = 2;
+
+    private const int rangeSteps = 6;
+    private const int stepMs = maxWaitMs / rangeSteps;
+
+    private const int randomCount = 5;
+
+    private const int loaderSlots = 5;
+
+
+    private static void checkLoader()
+    {
+        if (waitMs < minWaitMs || waitMs > maxWaitMs || i < 0)
+        {
+            waitMs = maxWaitMs;
+            increase = false;
+            backwards = false;
+            i = 0;
+        }
+    }
+
     public static async Task WriteLoader(CancellationToken cancellationToken)
     {
-        var ch = new[] { '|', '/', '-', '\\' };
-        int i = 0;
+        checkLoader();
+        int countRandom = 0;
+        int currCol = Console.CursorLeft;
+        int acumulatedWaitMs = 0;
+        int countForRandomPosition = 0;
+        char[] loaderPositions = new char[loaderSlots];
+        bool canCheckJackpot = false;
         while (!cancellationToken.IsCancellationRequested)
         {
-            Console.Write(ch[i % ch.Length]);
+            if (acumulatedWaitMs >= 1000)
+            {
+                acumulatedWaitMs -= 1000;
+                countForRandomPosition++;
+                if (countForRandomPosition > loaderSlots - 1)
+                {
+                    Console.SetCursorPosition(Random.Shared.Next(currCol, currCol + loaderSlots), Console.CursorTop);
+                    canCheckJackpot = true;
+                }
+                else
+                {
+                    Console.SetCursorPosition(currCol + countForRandomPosition, Console.CursorTop);
+                }
+            }
+            acumulatedWaitMs += waitMs;
+            if (countRandom > 0)
+            {
+                countRandom--;
+                i = Random.Shared.Next(0, LoaderChars.Length);
+            }
+            char currLoaderChar = LoaderChars[i++ % LoaderChars.Length];
+            loaderPositions[Console.CursorLeft - currCol] = currLoaderChar;
+            Console.Write(currLoaderChar);
+            if (canCheckJackpot)
+            {
+                canCheckJackpot = !checkJackpot(loaderPositions, loaderSlots);
+            }
+            if (backwards)
+            {
+                i += LoaderChars.Length - 2;
+            }
             try
             {
-                await Task.Delay(250, cancellationToken);
+                await Task.Delay(waitMs, cancellationToken);
+                if (countRandom > 0)
+                {
+                    continue;
+                }
+                if (increase)
+                {
+                    waitMs += incrementMs;
+                    if (waitMs > maxWaitMs)
+                    {
+                        waitMs = maxWaitMs;
+                        increase = false;
+                        countRandom = randomCount;
+                        backwards = !backwards;
+                    }
+                    continue;
+                }
+                if (waitMs > 5 * stepMs)
+                {
+                    waitMs -= decrementHighMs;
+                }
+                if (waitMs > 4 * stepMs)
+                {
+                    waitMs -= decrementMidMs;
+                }
+                if (waitMs > 3 * stepMs)
+                {
+                    waitMs -= decrementLowMs;
+                }
+                if (waitMs > 2 * stepMs)
+                {
+                    waitMs -= decrementMs;
+                }
+                waitMs -= 2;
+                if (waitMs < minWaitMs)
+                {
+                    waitMs = minWaitMs;
+                    increase = true;
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine();
+                Console.WriteLine(ex.ToString());
+                Console.WriteLine();
+                await Task.Delay(1000, CancellationToken.None);
             }
             finally
             {
                 Console.Write("\b");
             }
-            i++;
         }
+        Console.ResetColor();
+    }
+
+    private static bool checkJackpot(char[] loaderPositions, int positions)
+    {
+        for (int j = 0; j < positions - 1; j++)
+        {
+            if (loaderPositions[j] != loaderPositions[j + 1])
+            {
+                return false;
+            }
+        }
+        //Jackpot!
+        if (Console.ForegroundColor != ConsoleColor.Green)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.BackgroundColor = ConsoleColor.Black;
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Black;
+            Console.BackgroundColor = ConsoleColor.Green;
+        }
+        return true;
     }
 
     public static string GetWindows1252fromUtf8(string utf8)
@@ -84,7 +227,7 @@ public class Functions
     {
         try
         {
-            if(actual.Contains('<') || found.Contains('>'))
+            if (actual.Contains('<') || found.Contains('>'))
             {
                 return 0; // Do not compare versions
             }
@@ -162,6 +305,12 @@ public class Functions
             }
             Console.SetCursorPosition(col, lin);
         }
+    }
+
+    public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds)
+    {
+        await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(Console.ReadKey)])
+           .ConfigureAwait(false);
     }
 }
 

@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Consoler;
+﻿namespace Consoler;
 public static class Extensions
 {
     public static bool IsEmpty(this string str)
@@ -24,6 +17,22 @@ public static class Extensions
             list.Clear();
             list.TrimExcess();
         }
+    }
+    public static bool AnySafe<T>(this List<T> list)
+    {
+        if (list != default)
+        {
+            return list.Count > 0;
+        }
+        return false;
+    }
+    public static int CountSafe<T>(this List<T> list)
+    {
+        if (list != default)
+        {
+            return list.Count;
+        }
+        return 0;
     }
 
     public static string MyFileTimestamp(this DateTime dt)

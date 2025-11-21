@@ -1,9 +1,5 @@
 ﻿using CliWrap;
-using CliWrap.Buffered;
-using Consoler;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 
 namespace Consoler;
@@ -24,27 +20,52 @@ public class Program
 
     private static string? _strPath;
 
-    private static async Task Main()
+    private static async Task Main(string[] args)
     {
+        var switchMappings = new Dictionary<string, string>()
+           {
+               { "--loader", "Loader" }
+           };
+
+        IConfiguration config = new ConfigurationBuilder()
+            .AddCommandLine(args, switchMappings)
+            .Build();
+
+        bool _Loader = bool.Parse(config["Loader"] ?? "false");
+
         Console.OutputEncoding = Encoding.UTF8;
+        Console.CursorVisible = false;
+        Console.Title = "winget-upgrade";
         _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
         var strBuilder = new StringBuilder();
         Console.WriteLine($"\t\tWINGET");
-        var ctsDots = new CancellationTokenSource();
+        if (_Loader)
+        {
+            Console.WriteLine("Pressione ENTER para sair...");
+        }
+        var ctsLoader = new CancellationTokenSource();
         var ctsMain = new CancellationTokenSource();
         try
         {
-            _ = Functions.WriteLoader(ctsDots!.Token);
+            _ = Functions.WriteLoader(ctsLoader!.Token);
+            if (_Loader)
+            {
+                await Functions.WaitEnterKeyUpTo(600000);
+                ctsLoader.Cancel();
+                return;
+            }
             await Cli.Wrap("winget")
                 .WithArguments("upgrade")
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync();
-            ctsDots.Cancel();
-            Console.Write("\b");
+            //await Functions.WaitEnterKeyUpTo(60000);
+            ctsLoader.Cancel();
+            await Task.Delay(50, CancellationToken.None);
+            Functions.ClearCurrentConsoleLine();
             if (strBuilder.Length == 0)
             {
-                Console.WriteLine("EMPTY");
+                //Console.WriteLine("EMPTY");
                 return;
             }
 
@@ -53,8 +74,8 @@ public class Program
             string fullOutput = strBuilder.ToString();
             try
             {
-                await LogsMaintenanceAsync(ctsMain!.Token).ConfigureAwait(false);
-                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now.MyFileTimestamp()}.txt", fullOutput, ctsMain!.Token)
+                await LogsMaintenanceAsync().ConfigureAwait(false);
+                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now.MyFileTimestamp()}.txt", fullOutput, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -65,21 +86,25 @@ public class Program
                 Console.WriteLine();
             }
 
-            if (!fullOutput.Contains("Nome") || !fullOutput.Contains("ID"))
-            {
-                Console.WriteLine("Dados não conferem");
-                return;
-            }
+            //if (!fullOutput.Contains("Nome") || !fullOutput.Contains("ID"))
+            //{
+            //    Console.WriteLine("Dados não conferem");
+            //    Console.WriteLine($"({fullOutput})");
+            //    await Functions.WaitEnterKeyUpTo(10000);
+            //    return;
+            //}
 
             await ProcessListAsync(fullOutput, ctsMain!.Token).ConfigureAwait(false);
 
         }
         catch (Exception ex)
         {
-            ctsDots.Cancel();
+            ctsLoader.Cancel();
             ctsMain.Cancel();
-            Console.Write("\b");
-            Console.WriteLine("\bErro ao atualizar...");
+            await Task.Delay(50, CancellationToken.None);
+            Console.Write("\b  ");
+            Console.WriteLine();
+            Console.WriteLine("Erro ao atualizar...");
             Console.WriteLine(ex.ToString());
             try
             {
@@ -88,18 +113,23 @@ public class Program
             catch
             {
             }
-            Console.ReadLine();
+            await Functions.WaitEnterKeyUpTo(30000);
             Environment.FailFast(ex.ToString());
         }
     }
 
     private static async Task ProcessListAsync(string fullOutput, CancellationToken token)
     {
-        var content = fullOutput[fullOutput.IndexOf("Nome")..];
+        string content = "";
+        if (fullOutput.Contains("Nome"))
+        {
+            content = fullOutput[fullOutput.IndexOf("Nome")..];
+        }
+
         var lines = content.Split(Environment.NewLine);
         int indexID = lines[0].IndexOf("ID");
         int IDSize = lines[0].IndexOf("Vers") - indexID;
-        int indexVersao = lines[0].IndexOf("Vers");
+        //int indexVersao = lines[0].IndexOf("Vers");
         //int VersaoSize = lines[0].IndexOf("Dispon") - indexVersao;
 
         List<App> appsToIgnore = [];
@@ -155,26 +185,22 @@ public class Program
                 Console.WriteLine($"Erro ao ler {appName} ({lines[i]})");
                 continue;
             }
+            var appToAdd = new App
+            {
+                Nome = appName,
+                ID = lineTrailSplit[0],
+            };
             if (lineTrailSplit.Length >= 4 && lineTrailSplit[1] == "<")
             {
-                appsFoundToUpdate.Add(new App
-                {
-                    Nome = appName,
-                    ID = lineTrailSplit[0],
-                    Versao = $"{lineTrailSplit[1]} {lineTrailSplit[2]}",
-                    Disponivel = lineTrailSplit[3],
-                });
+                appToAdd.Versao = $"{lineTrailSplit[1]} {lineTrailSplit[2]}";
+                appToAdd.Disponivel = lineTrailSplit[3];
             }
             else
             {
-                appsFoundToUpdate.Add(new App
-                {
-                    Nome = appName,
-                    ID = lineTrailSplit[0],
-                    Versao = lineTrailSplit[1],
-                    Disponivel = lineTrailSplit[2],
-                });
+                appToAdd.Versao = lineTrailSplit[1];
+                appToAdd.Disponivel = lineTrailSplit[2];
             }
+            appsFoundToUpdate.Add(appToAdd);
 
             //Padding
             if (appName.Length > namePaddingLength)
@@ -191,9 +217,10 @@ public class Program
         if (appsFoundToUpdate.Count == 0)
         {
             Console.WriteLine("Nenhum app encontrado para atualizar");
+            await Functions.WaitEnterKeyUpTo(2000);
             return;
         }
-        List<App> appsAbleToUpdate = [];
+        List<App> appsUpdateable = [];
         string nameFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Nome.Length)}}}";
         string idFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.ID.Length)}}}";
         string curVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Versao.Length)}}}";
@@ -223,13 +250,13 @@ public class Program
                 else
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
-                    appsAbleToUpdate.Add(app);
+                    appsUpdateable.Add(app);
                 }
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                appsAbleToUpdate.Add(app);
+                appsUpdateable.Add(app);
             }
 
             Console.Write(idFmt, app.ID);
@@ -259,7 +286,7 @@ public class Program
         Console.WriteLine();
 
         List<string> appsToUpdate = [];
-        foreach (var app in appsAbleToUpdate)
+        foreach (var app in appsUpdateable)
         {
             var (column, line) = Console.GetCursorPosition();
             Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
@@ -267,7 +294,7 @@ public class Program
             var key = Console.ReadKey(true);
             //Console.Write("\b");
             Console.WriteLine();
-            Functions.RevertLastWriteEx(column, line);
+            Functions.RevertLastWrite(column, line);
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
                 Console.WriteLine($"{app.Nome} adicionado");
@@ -287,6 +314,12 @@ public class Program
             }
         }
 
+        if (appsToUpdate.Count == 0)
+        {
+            Console.WriteLine("Nenhum update escolhido...");
+            await Functions.WaitEnterKeyUpTo(1000);
+            return;
+        }
         int iUpdates = await ProcessUpdatesAsync(appsToUpdate, token).ConfigureAwait(false);
         if (iUpdates == 0)
         {
@@ -297,30 +330,34 @@ public class Program
             Console.WriteLine($"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
         }
 
-
-        await Task.WhenAny([Task.Delay(iUpdates == 0 ? 2000 : 5000), Task.Run(Console.ReadKey)])
-            .ConfigureAwait(false);
+        await Functions.WaitEnterKeyUpTo(iUpdates == 0 ? 2000 : 4000);
     }
 
     private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate, CancellationToken token)
     {
+        if (!appsToUpdate.AnySafe())
+        {
+            return 0;
+        }
         int iUpdates = 0;
         var strBuilder = new StringBuilder();
         foreach (string appID in appsToUpdate)
         {
-            var ctsDotsUpdate = new CancellationTokenSource();
+            var ctsLoader = new CancellationTokenSource();
             try
             {
                 Console.WriteLine();
                 Console.Write($"Atualizando {appID} ");
-                _ = Functions.WriteLoader(ctsDotsUpdate!.Token);
+                _ = Functions.WriteLoader(ctsLoader!.Token);
                 await Cli.Wrap("winget")
                     .WithArguments(["update", appID, "--silent"])
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                     .ExecuteAsync(token)
                     .ConfigureAwait(false);
-                ctsDotsUpdate.Cancel();
-                Console.Write("\b");
+                ctsLoader.Cancel();
+                await Task.Delay(50, CancellationToken.None);
+                //Console.Write("\b  ");
+
                 Console.WriteLine();
                 Console.WriteLine($"{appID} atualizado");
                 iUpdates++;
@@ -328,28 +365,32 @@ public class Program
             }
             catch (Exception ex)
             {
-                ctsDotsUpdate.Cancel();
-                Console.Write("\b");
+                ctsLoader.Cancel();
+                await Task.Delay(50, CancellationToken.None);
+                //Console.Write("\b  ");
+
                 Console.WriteLine();
                 Console.WriteLine($"{appID} EXCEPTION");
                 Console.WriteLine(strBuilder.ToString());
                 try
                 {
-                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt", ex.ToString(), token).ConfigureAwait(false);
+                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt",
+                        ex.ToString(),
+                        CancellationToken.None)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
                 }
-                Console.ReadKey(true);
+                await Functions.WaitEnterKeyUpTo(30000);
             }
-
-            Console.WriteLine();
-            Console.WriteLine();
+            //Console.WriteLine();
         }
 
         return iUpdates;
     }
-    private static async Task LogsMaintenanceAsync(CancellationToken token)
+
+    private static async Task LogsMaintenanceAsync()
     {
         //scan for old logs
         var files = Directory.GetFiles(_strPath!, "wingetOutput_*.txt");
@@ -368,7 +409,7 @@ public class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"\bErro ao deletar {file}: {ex}");
+                    Console.WriteLine($"Erro ao deletar {file}: {ex}");
                 }
             }).ConfigureAwait(false))).ConfigureAwait(false);
 

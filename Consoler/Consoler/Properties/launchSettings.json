@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Consoler": {
+      "commandName": "Project",
+      "commandLineArgs": "--loader true"
+    }
+  }
+}
