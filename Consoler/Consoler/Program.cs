@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using System.Text;
 
 namespace Consoler;
+
 public class Program
 {
     struct App
@@ -47,14 +48,14 @@ public class Program
         var ctsMain = new CancellationTokenSource();
         try
         {
-            _ = Functions.WriteLoader(ctsLoader!.Token);
+            _ = Loader.Wait(ctsLoader!.Token);
             if (_Loader)
             {
                 await Functions.WaitEnterKeyUpTo(600000);
                 ctsLoader.Cancel();
                 return;
             }
-            await Cli.Wrap("winget")
+            _ = await Cli.Wrap("winget")
                 .WithArguments("upgrade")
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                 .WithValidation(CommandResultValidation.None)
@@ -80,10 +81,11 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"File Write Exception: {ex}");
-                Console.ResetColor();
-                Console.WriteLine();
+                //Console.ForegroundColor = ConsoleColor.Red;
+                //Console.WriteLine($"File Write Exception: {ex}");
+                //Console.ResetColor();
+                //Console.WriteLine();
+                ex.PrintAndWait();
             }
 
             //if (!fullOutput.Contains("Nome") || !fullOutput.Contains("ID"))
@@ -348,7 +350,7 @@ public class Program
             {
                 Console.WriteLine();
                 Console.Write($"Atualizando {appID} ");
-                _ = Functions.WriteLoader(ctsLoader!.Token);
+                _ = Loader.Wait(ctsLoader!.Token);
                 await Cli.Wrap("winget")
                     .WithArguments(["update", appID, "--silent"])
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))

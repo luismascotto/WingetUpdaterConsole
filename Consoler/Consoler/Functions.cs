@@ -4,207 +4,30 @@ namespace Consoler;
 
 public class Functions
 {
-    static readonly string SpacesWindowWidth = new(' ', Console.WindowWidth);
-    static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
-    //Write a function that writes dots on console until receives a cancellation token
-    public static async Task WriteDotsAsync(CancellationToken cancellationToken)
-    {
-        var rnd = Random.Shared;
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                Console.Write(".");
-                await Task.Delay(rnd!.Next(50, 500), cancellationToken);
-            }
-        }
-        finally
-        {
-            Console.WriteLine();
-        }
-    }
+    static readonly string Spaces = "                                                                                                                                                                  ";
 
-    private static int i = 0;
-    private static int waitMs = maxWaitMs;
-    private static bool increase = false;
-    private static bool backwards = false;
+    // public static string GetWindows1252fromUtf8(string utf8)
+    // {
+    //     var srcEncoding = Encoding.UTF8; // utf-8
+    //     var destEncoding = Encoding.Default;
+    //     //var destEncoding = Encoding.GetEncoding(Encoding.Latin1); // windows-1252
 
-    private const int minWaitMs = 50;
-    private const int maxWaitMs = 200;
+    //     // convert the source bytes to the destination bytes
+    //     var destBytes = Encoding.Convert(srcEncoding, destEncoding, srcEncoding.GetBytes(utf8));
+    //     var destString = destEncoding.GetString(destBytes);
 
-    private const int incrementMs = 20;
+    //     return destString;
+    // }
+    // public static string GetUTF8(string text)
+    // {
+    //     Encoding utf8 = Encoding.GetEncoding("UTF-8");
+    //     Encoding latin = Encoding.Latin1;
 
-    private const int decrementHighMs = 10;
-    private const int decrementMidMs = 10;
-    private const int decrementLowMs = 10;
-    private const int decrementMs = 2;
+    //     byte[] win1251Bytes = latin.GetBytes(text);
+    //     byte[] utf8Bytes = Encoding.Convert(latin, utf8, win1251Bytes);
 
-    private const int rangeSteps = 6;
-    private const int stepMs = maxWaitMs / rangeSteps;
-
-    private const int randomCount = 5;
-
-    private const int loaderSlots = 5;
-
-
-    private static void checkLoader()
-    {
-        if (waitMs < minWaitMs || waitMs > maxWaitMs || i < 0)
-        {
-            waitMs = maxWaitMs;
-            increase = false;
-            backwards = false;
-            i = 0;
-        }
-    }
-
-    public static async Task WriteLoader(CancellationToken cancellationToken)
-    {
-        checkLoader();
-        int countRandom = 0;
-        int currCol = Console.CursorLeft;
-        int acumulatedWaitMs = 0;
-        int countForRandomPosition = 0;
-        char[] loaderPositions = new char[loaderSlots];
-        bool canCheckJackpot = false;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            if (acumulatedWaitMs >= 1000)
-            {
-                acumulatedWaitMs -= 1000;
-                countForRandomPosition++;
-                if (countForRandomPosition > loaderSlots - 1)
-                {
-                    Console.SetCursorPosition(Random.Shared.Next(currCol, currCol + loaderSlots), Console.CursorTop);
-                    canCheckJackpot = true;
-                }
-                else
-                {
-                    Console.SetCursorPosition(currCol + countForRandomPosition, Console.CursorTop);
-                }
-            }
-            acumulatedWaitMs += waitMs;
-            if (countRandom > 0)
-            {
-                countRandom--;
-                i = Random.Shared.Next(0, LoaderChars.Length);
-            }
-            char currLoaderChar = LoaderChars[i++ % LoaderChars.Length];
-            loaderPositions[Console.CursorLeft - currCol] = currLoaderChar;
-            Console.Write(currLoaderChar);
-            if (canCheckJackpot)
-            {
-                canCheckJackpot = !checkJackpot(loaderPositions, loaderSlots);
-            }
-            if (backwards)
-            {
-                i += LoaderChars.Length - 2;
-            }
-            try
-            {
-                await Task.Delay(waitMs, cancellationToken);
-                if (countRandom > 0)
-                {
-                    continue;
-                }
-                if (increase)
-                {
-                    waitMs += incrementMs;
-                    if (waitMs > maxWaitMs)
-                    {
-                        waitMs = maxWaitMs;
-                        increase = false;
-                        countRandom = randomCount;
-                        backwards = !backwards;
-                    }
-                    continue;
-                }
-                if (waitMs > 5 * stepMs)
-                {
-                    waitMs -= decrementHighMs;
-                }
-                if (waitMs > 4 * stepMs)
-                {
-                    waitMs -= decrementMidMs;
-                }
-                if (waitMs > 3 * stepMs)
-                {
-                    waitMs -= decrementLowMs;
-                }
-                if (waitMs > 2 * stepMs)
-                {
-                    waitMs -= decrementMs;
-                }
-                waitMs -= 2;
-                if (waitMs < minWaitMs)
-                {
-                    waitMs = minWaitMs;
-                    increase = true;
-                }
-            }
-            catch (TaskCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine();
-                Console.WriteLine(ex.ToString());
-                Console.WriteLine();
-                await Task.Delay(1000, CancellationToken.None);
-            }
-            finally
-            {
-                Console.Write("\b");
-            }
-        }
-        Console.ResetColor();
-    }
-
-    private static bool checkJackpot(char[] loaderPositions, int positions)
-    {
-        for (int j = 0; j < positions - 1; j++)
-        {
-            if (loaderPositions[j] != loaderPositions[j + 1])
-            {
-                return false;
-            }
-        }
-        //Jackpot!
-        if (Console.ForegroundColor != ConsoleColor.Green)
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.BackgroundColor = ConsoleColor.Black;
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.Black;
-            Console.BackgroundColor = ConsoleColor.Green;
-        }
-        return true;
-    }
-
-    public static string GetWindows1252fromUtf8(string utf8)
-    {
-        var srcEncoding = Encoding.UTF8; // utf-8
-        var destEncoding = Encoding.Default;
-        //var destEncoding = Encoding.GetEncoding(Encoding.Latin1); // windows-1252
-
-        // convert the source bytes to the destination bytes
-        var destBytes = Encoding.Convert(srcEncoding, destEncoding, srcEncoding.GetBytes(utf8));
-        var destString = destEncoding.GetString(destBytes);
-
-        return destString;
-    }
-    public static string GetUTF8(string text)
-    {
-        Encoding utf8 = Encoding.GetEncoding("UTF-8");
-        Encoding latin = Encoding.Latin1;
-
-        byte[] win1251Bytes = latin.GetBytes(text);
-        byte[] utf8Bytes = Encoding.Convert(latin, utf8, win1251Bytes);
-
-        return utf8.GetString(win1251Bytes);
-    }
+    //     return utf8.GetString(win1251Bytes);
+    // }
 
     public static void ClearCurrentConsoleLine(int extraLinesUp = 0)
     {
@@ -275,7 +98,7 @@ public class Functions
             {
                 Console.SetCursorPosition(0, currentLine);
             }
-            Console.Write(SpacesWindowWidth);
+            Console.Write(Spaces[..Console.WindowWidth]);
             Console.SetCursorPosition(0, --currentLine);
         }
 
@@ -309,8 +132,54 @@ public class Functions
 
     public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds)
     {
-        await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(Console.ReadKey)])
+        _ = await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(PressEnter)])
            .ConfigureAwait(false);
+    }
+
+    public static void PressEnter()
+    {
+        PressAKey(ConsoleKey.Enter);
+    }
+
+    /**
+     * Wait for a specific key press, or any key if ConsoleKey.None is provided
+     * @param key The key to wait for
+     */
+    public static void PressAKey(ConsoleKey key = ConsoleKey.None)
+    {
+        do
+        {
+            var keyRead = Console.ReadKey(true);
+            if (key == ConsoleKey.None || keyRead.Key == key)
+            {
+                break;
+            }
+            //await Task.Delay(100, CancellationToken.None);
+        } while (true);
+    }
+
+    public static void WriteLineWrapIndented(string? text, int indentSpaces = 0)
+    {
+        if (!text.HasSomething())
+        {
+            return;
+        }
+        string spaces = new(' ', indentSpaces);
+        int realWidth = Console.WindowWidth - indentSpaces;
+        var spanText = text.AsSpan();
+        while (spanText.Length > 0)
+        {
+            if(spanText.Length <= realWidth)
+            {
+                realWidth = spanText.Length;
+            }
+            if (indentSpaces > 0)
+            {
+                Console.Write(spaces);
+            }
+            Console.WriteLine(spanText[..realWidth].ToString());
+            spanText = spanText[realWidth..];
+        }
     }
 }
 

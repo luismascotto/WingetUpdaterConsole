@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Consoler;
+
 internal class EncodingHelper
 {
     // Function to detect the encoding for UTF-7, UTF-8/16/32 (bom, no bom, little
