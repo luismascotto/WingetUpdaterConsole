@@ -399,3 +399,6 @@ FodyWeavers.xsd
 
 # Code Rush Options
 .cr
+/Consoler/Consoler/Properties
+/publish.bat
+/Consoler.sln.lnk
