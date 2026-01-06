@@ -43,6 +43,7 @@ public class Loader
             backwards = false;
             i = 0;
         }
+        Array.Clear(loaderPositions, 0, loaderSlots);
     }
 
     public static async Task Wait(CancellationToken cancellationToken)

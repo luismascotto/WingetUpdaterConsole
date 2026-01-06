@@ -278,6 +278,10 @@ public class Program
                 {
                     Console.Write($" - Por sua conta e Risco...");
                 }
+                else if(compare < -1)
+                {
+                    Console.Write($" - Atenção*");
+                }
             }
             Console.WriteLine();
         }

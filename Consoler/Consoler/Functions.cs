@@ -67,6 +67,10 @@ public class Functions
                 }
                 if (int.Parse(my[i]) < int.Parse(other[i]))
                 {
+                    if (i == 0)
+                    {
+                        return -2;
+                    }
                     return -1;
                 }
             }
