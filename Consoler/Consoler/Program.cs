@@ -265,7 +265,23 @@ public class Program
             Console.Write(" ");
             Console.Write(curVerFmt, app.Versao);
             Console.Write(" --> ");
-            Console.Write(avlbVerFmt, app.Disponivel);
+            int disponivelPad = appsFoundToUpdate.Max(found => found.Disponivel.Length) - app.Disponivel.Length;
+            int iCompVersion = 0;
+            while (iCompVersion < app.Disponivel.Length && app.Versao[iCompVersion] == app.Disponivel[iCompVersion])
+            {
+                Console.Write(app.Disponivel[iCompVersion]);
+                iCompVersion++;
+            }
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            if (iCompVersion < app.Disponivel.Length)
+            {
+                Console.Write(app.Disponivel[iCompVersion..]);
+            }
+            if(disponivelPad > 0)
+            {
+                Console.Write(new string(' ', disponivelPad));
+            }
+            //Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
             if (compare <= 0)
             {
@@ -278,7 +294,7 @@ public class Program
                 {
                     Console.Write($" - Por sua conta e Risco...");
                 }
-                else if(compare < -1)
+                else if (compare < -1)
                 {
                     Console.Write($" - Atenção*");
                 }
