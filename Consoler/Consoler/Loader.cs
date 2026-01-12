@@ -44,6 +44,7 @@ public class Loader
             i = 0;
         }
         Array.Clear(loaderPositions, 0, loaderSlots);
+        Console.ForegroundColor = ConsoleColor.White;
     }
 
     public static async Task Wait(CancellationToken cancellationToken)
@@ -152,16 +153,13 @@ public class Loader
             }
         }
         Array.Clear(loaderPositions, 0, positions);
-        //Jackpot!
-        if (Console.ForegroundColor != ConsoleColor.Green)
+        int clippedColor = (int)ConsoleColor.Blue + ((int)Console.ForegroundColor + 1 - (int)ConsoleColor.Blue) % (((int)ConsoleColor.White - (int)ConsoleColor.Blue) + 1);
+        Console.ForegroundColor = (ConsoleColor)clippedColor;
+        if(Console.ForegroundColor == ConsoleColor.White)
         {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.BackgroundColor = ConsoleColor.Black;
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.Black;
-            Console.BackgroundColor = ConsoleColor.Green;
+            // Increment Background Color
+            int bgClippedColor = (int)ConsoleColor.Black + ((int)Console.BackgroundColor + 1 - (int)ConsoleColor.Black) % (((int)ConsoleColor.DarkYellow - (int)ConsoleColor.Black) + 1);
+            Console.BackgroundColor = (ConsoleColor)bgClippedColor;
         }
         return true;
     }
