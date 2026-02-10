@@ -21,49 +21,76 @@ public class Program
 
     private static string? _strPath;
 
+    private static bool _DebugLoader;
+    private static int _LoaderType;
+    private static string? _LoaderSymbols;
+
     private static async Task Main(string[] args)
     {
         var switchMappings = new Dictionary<string, string>()
            {
-               { "--loader", "Loader" }
+               { "--debug", "DebugLoader" },
+               { "--loader", "LoaderType" },
+               { "--symbols", "LoaderSymbols" },
            };
+
+        _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
 
         IConfiguration config = new ConfigurationBuilder()
             .AddCommandLine(args, switchMappings)
             .Build();
 
-        bool _Loader = bool.Parse(config["Loader"] ?? "false");
+        if (!bool.TryParse(config["DebugLoader"] ?? "false", out _DebugLoader))
+        {
+            throw new ArgumentException("Invalid DebugLoader value");
+        }
+        if (!int.TryParse(config["LoaderType"] ?? "1", out _LoaderType))
+        {
+            throw new ArgumentException("Invalid LoaderType value");
+        }
+
+        _LoaderSymbols = config["LoaderSymbols"] ?? "";
 
         Console.OutputEncoding = Encoding.UTF8;
         Console.CursorVisible = false;
-        Console.Title = "winget-upgrade";
-        _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
-        var strBuilder = new StringBuilder();
-        Console.WriteLine($"\t\tWINGET");
-        if (_Loader)
+        if (_DebugLoader)
         {
-            Console.WriteLine("Pressione ENTER para sair...");
+            Console.Title = "winget-upgrade-debug";
+            Console.WriteLine($"\t\tWINGET (Debug Loader)");
+
+            ProcessDebugLoader(_LoaderType, _LoaderSymbols);
+            return;
         }
+        Console.Title = "winget-upgrade";
+        Console.WriteLine($"\t\tWINGET");
         var ctsLoader = new CancellationTokenSource();
         var ctsMain = new CancellationTokenSource();
         try
         {
-            _ = Loader.Wait(ctsLoader!.Token);
-            if (_Loader)
+            switch (_LoaderType)
+            {
+                case 1:
+                    _ = Loader.Wait(ctsLoader!.Token);
+                    break;
+                case 2:
+                    _ = Loader.Wait2(_LoaderSymbols, ctsLoader!.Token);
+                    break;
+            }
+            //_ = Loader.Wait2(ctsLoader!.Token);
+            if (_DebugLoader)
             {
                 await Functions.WaitEnterKeyUpTo(600000);
-                ctsLoader.Cancel();
+                Loader.Stop(ctsLoader);
                 return;
             }
+            var strBuilder = new StringBuilder();
             _ = await Cli.Wrap("winget")
                 .WithArguments("upgrade")
                 .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync();
-            //await Functions.WaitEnterKeyUpTo(60000);
-            ctsLoader.Cancel();
-            await Task.Delay(50, CancellationToken.None);
-            Functions.ClearCurrentConsoleLine();
+            Loader.Stop(ctsLoader);
+            //Functions.ClearCurrentConsoleLine();
             if (strBuilder.Length == 0)
             {
                 //Console.WriteLine("EMPTY");
@@ -73,41 +100,16 @@ public class Program
             Console.WriteLine();
             Console.WriteLine();
             string fullOutput = strBuilder.ToString();
-            try
-            {
-                await LogsMaintenanceAsync().ConfigureAwait(false);
-                await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now.MyFileTimestamp()}.txt", fullOutput, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                //Console.ForegroundColor = ConsoleColor.Red;
-                //Console.WriteLine($"File Write Exception: {ex}");
-                //Console.ResetColor();
-                //Console.WriteLine();
-                ex.PrintAndWait();
-            }
+            await LogsMaintenanceAsync().ConfigureAwait(false);
+            await File.AppendAllTextAsync($"{_strPath}wingetOutput_{DateTime.Now.MyFileTimestamp()}.txt", fullOutput, CancellationToken.None)
+                .ConfigureAwait(false);
 
-            //if (!fullOutput.Contains("Nome") || !fullOutput.Contains("ID"))
-            //{
-            //    Console.WriteLine("Dados não conferem");
-            //    Console.WriteLine($"({fullOutput})");
-            //    await Functions.WaitEnterKeyUpTo(10000);
-            //    return;
-            //}
-
-            await ProcessListAsync(fullOutput, ctsMain!.Token).ConfigureAwait(false);
+            await ProcessListAsync(fullOutput, CancellationToken.None).ConfigureAwait(false);
 
         }
         catch (Exception ex)
         {
-            ctsLoader.Cancel();
-            ctsMain.Cancel();
-            await Task.Delay(50, CancellationToken.None);
-            Console.Write("\b  ");
-            Console.WriteLine();
-            Console.WriteLine("Erro ao atualizar...");
-            Console.WriteLine(ex.ToString());
+            Loader.Stop(ctsLoader);
             try
             {
                 File.AppendAllText($"{_strPath}exception_main_{DateTime.Now.MyFileTimestamp()}.txt", ex.ToString());
@@ -115,8 +117,9 @@ public class Program
             catch
             {
             }
-            await Functions.WaitEnterKeyUpTo(30000);
-            Environment.FailFast(ex.ToString());
+            ex.PrintAndWait("Erro ao atualizar...");
+
+            //Environment.FailFast(ex.ToString());
         }
     }
 
@@ -265,22 +268,8 @@ public class Program
             Console.Write(" ");
             Console.Write(curVerFmt, app.Versao);
             Console.Write(" --> ");
-            int disponivelPad = appsFoundToUpdate.Max(found => found.Disponivel.Length) - app.Disponivel.Length;
-            int iCompVersion = 0;
-            while (iCompVersion < app.Disponivel.Length && app.Versao[iCompVersion] == app.Disponivel[iCompVersion])
-            {
-                Console.Write(app.Disponivel[iCompVersion]);
-                iCompVersion++;
-            }
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            if (iCompVersion < app.Disponivel.Length)
-            {
-                Console.Write(app.Disponivel[iCompVersion..]);
-            }
-            if(disponivelPad > 0)
-            {
-                Console.Write(new string(' ', disponivelPad));
-            }
+            int rightPadding = appsFoundToUpdate.Max(found => found.Disponivel.Length) - app.Disponivel.Length;
+            PrintNewVersion(app, rightPadding);
             //Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
             if (compare <= 0)
@@ -355,6 +344,46 @@ public class Program
         await Functions.WaitEnterKeyUpTo(iUpdates == 0 ? 2000 : 4000);
     }
 
+    private static void PrintNewVersion(App app, int disponivelPad)
+    {
+        int iCompVersion = 0;
+        var currSemVer = app.Versao.Split('.');
+        var nextSemVer = app.Disponivel.Split('.');
+        //if (currSemVer.Length != nextSemVer.Length)
+        //{
+        //    //different length, print all in yellow
+        //    Console.ForegroundColor = ConsoleColor.Yellow;
+        //    Console.Write(app.Disponivel);
+        //    if (disponivelPad > 0)
+        //    {
+        //        Console.Write(new string(' ', disponivelPad));
+        //    }
+        //    return;
+        //}
+        while (iCompVersion < nextSemVer.Length)
+        {
+            if (iCompVersion >= currSemVer.Length)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+            }
+            else if (currSemVer[iCompVersion] != nextSemVer[iCompVersion])
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+            }
+            Console.Write(nextSemVer[iCompVersion]);
+            iCompVersion++;
+            if (iCompVersion < nextSemVer.Length)
+            {
+                Console.Write(".");
+            }
+        }
+
+        if (disponivelPad > 0)
+        {
+            Console.Write(new string(' ', disponivelPad));
+        }
+    }
+
     private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate, CancellationToken token)
     {
         if (!appsToUpdate.AnySafe())
@@ -370,25 +399,36 @@ public class Program
             {
                 Console.WriteLine();
                 Console.Write($"Atualizando {appID} ");
-                _ = Loader.Wait(ctsLoader!.Token);
-                await Cli.Wrap("winget")
+                switch (_LoaderType)
+                {
+                    case 1:
+                        _ = Loader.Wait(ctsLoader!.Token);
+                        break;
+                    case 2:
+                        _ = Loader.Wait2(_LoaderSymbols!, ctsLoader!.Token);
+                        break;
+                }
+                //_ = Loader.Wait(ctsLoader!.Token);
+                _ = await Cli.Wrap("winget")
                     .WithArguments(["update", appID, "--silent"])
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
                     .ExecuteAsync(token)
                     .ConfigureAwait(false);
-                ctsLoader.Cancel();
-                await Task.Delay(50, CancellationToken.None);
+                Loader.Stop(ctsLoader);
+                //ctsLoader.Cancel();
+                //await Task.Delay(50, CancellationToken.None);
                 //Console.Write("\b  ");
 
                 Console.WriteLine();
                 Console.WriteLine($"{appID} atualizado");
                 iUpdates++;
-                strBuilder.Clear();
+                _ = strBuilder.Clear();
             }
             catch (Exception ex)
             {
-                ctsLoader.Cancel();
-                await Task.Delay(50, CancellationToken.None);
+                Loader.Stop(ctsLoader);
+                //ctsLoader.Cancel();
+                //await Task.Delay(50, CancellationToken.None);
                 //Console.Write("\b  ");
 
                 Console.WriteLine();
@@ -418,8 +458,10 @@ public class Program
         var files = Directory.GetFiles(_strPath!, "wingetOutput_*.txt");
         if (files.Length > _QTY_LOGS)
         {
-            Array.Sort(files);
+            //Sort files by Creation Date
+            Array.Sort(files, (f1, f2) => File.GetCreationTime(f1).CompareTo(File.GetCreationTime(f2)));
 
+            //Keep only last _QTY_LOGS files (and delete the rest)
             await Task.WhenAll(files[..^_QTY_LOGS].Select(async file => await Task.Run(() =>
             {
                 try
@@ -434,7 +476,37 @@ public class Program
                     Console.WriteLine($"Erro ao deletar {file}: {ex}");
                 }
             }).ConfigureAwait(false))).ConfigureAwait(false);
+        }
+    }
 
+    private static void ProcessDebugLoader(int loaderType, string loaderSymbols)
+    {
+        int iTry = 5;
+        while (iTry-- > 0)
+        {
+            Console.Write($"{Environment.NewLine}ENTER to RELOAD ({iTry + 1}x exit) ");
+
+            var ctsLoader = new CancellationTokenSource();
+            try
+            {
+                switch (loaderType)
+                {
+                    case 1:
+                        _ = Loader.Wait(ctsLoader!.Token);
+                        break;
+                    case 2:
+                        _ = Loader.Wait2(loaderSymbols, ctsLoader!.Token);
+                        break;
+                }
+                Functions.WaitEnterKeyUpTo(600000).Wait();
+                Loader.Stop(ctsLoader);
+
+            }
+            catch
+            {
+                Loader.Stop(ctsLoader);
+                break;
+            }
         }
     }
 }

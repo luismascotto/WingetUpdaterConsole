@@ -79,9 +79,10 @@ public class Functions
         }
         catch (Exception ex)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ######## {ex.Message}");
-            Console.ResetColor();
+            ex.PrintAndWait($"##########      EXCEPTION ({actual} vs ({found}))     ########");
+            //Console.ForegroundColor = ConsoleColor.Red;
+            //Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ######## {ex.Message}");
+            //Console.ResetColor();
             Thread.Sleep(100);
             return 2;
         }
@@ -168,7 +169,6 @@ public class Functions
         {
             return;
         }
-        string spaces = new(' ', indentSpaces);
         int realWidth = Console.WindowWidth - indentSpaces;
         var spanText = text.AsSpan();
         while (spanText.Length > 0)
@@ -177,13 +177,23 @@ public class Functions
             {
                 realWidth = spanText.Length;
             }
-            if (indentSpaces > 0)
-            {
-                Console.Write(spaces);
-            }
-            Console.WriteLine(spanText[..realWidth].ToString());
+            WriteSpaces(indentSpaces);
+            //if (indentSpaces > 0)
+            //{
+            //    Console.Write(spaces);
+            //}
+            Console.WriteLine(spanText[..realWidth]);
             spanText = spanText[realWidth..];
         }
+    }
+
+    public static void WriteSpaces(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+        Console.Write(Spaces.AsSpan()[..count]);
     }
 }
 

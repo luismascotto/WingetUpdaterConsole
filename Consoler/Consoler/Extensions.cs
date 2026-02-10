@@ -42,7 +42,7 @@ public static class Extensions
         return $"{dt:yyyy-MM-dd}_{dt.Ticks:X16}"; //2023-11-03_000000018E1F6C80
     }
 
-    public static void PrintAndWait(this Exception ex, string message = "")
+    public static void Print(this Exception ex, string message = "")
     {
         Console.ResetColor();
         Console.WriteLine();
@@ -56,6 +56,12 @@ public static class Extensions
         Functions.WriteLineWrapIndented(ex.StackTrace);
         Console.ResetColor();
         Console.WriteLine();
+        
+    }
+
+    public static void PrintAndWait(this Exception ex, string message = "")
+    {
+        ex.Print(message);
         Functions.WaitEnterKeyUpTo(30000).Wait();
     }
 }

@@ -1,12 +1,15 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 
 namespace Consoler;
 
 public class Loader
 {
-    static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
+    private static char[]? LoaderChars;
+    //static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
     //Write a function that writes dots on console until receives a cancellation token
-
+    private const string defaultSymbols = "-\\|/";
+    static readonly string[] defaultSymbolsList = ["-\\|/", "+=-*", "mMwW", "0OoC", ".;:|", "({[<", ")}]>"];
 
     private static int i = 0;
     private static int waitMs = maxWaitMs;
@@ -16,6 +19,9 @@ public class Loader
 
     private const int minWaitMs = 50;
     private const int maxWaitMs = 200;
+
+    //private const int minWaitMs = 120;
+    //private const int maxWaitMs = 250;
 
     private const int incrementMs = 20;
 
@@ -32,7 +38,11 @@ public class Loader
     private const int loaderSlots = 5;
 
     private const int waitMsChangeLoaderPosition = 1000;
-    private static char[] loaderPositions = new char[loaderSlots];
+    readonly private static char[] loaderPositions = new char[loaderSlots];
+
+    private static ConsoleColor LastForegroundColor = ConsoleColor.White;
+    private static ConsoleColor LastBackgroundColor = ConsoleColor.Black;
+
 
     private static void CheckLoader()
     {
@@ -43,8 +53,14 @@ public class Loader
             backwards = false;
             i = 0;
         }
+        if (LoaderChars == null || LoaderChars.Length < 2)
+        {
+            LoaderChars = defaultSymbolsList[Random.Shared.Next(0, defaultSymbolsList.Length)].ToCharArray();
+        }
         Array.Clear(loaderPositions, 0, loaderSlots);
-        Console.ForegroundColor = ConsoleColor.White;
+        Console.ForegroundColor = LastForegroundColor;
+        Console.BackgroundColor = LastBackgroundColor;
+
     }
 
     public static async Task Wait(CancellationToken cancellationToken)
@@ -74,7 +90,7 @@ public class Loader
             if (countRandom > 0)
             {
                 countRandom--;
-                SpinLoader(Random.Shared.Next(0, LoaderChars.Length));
+                SpinLoader(Random.Shared.Next(0, LoaderChars!.Length));
             }
             loaderPositions[loaderSlot] = GetLoaderChar();
             Console.Write(loaderPositions[loaderSlot]);
@@ -139,6 +155,7 @@ public class Loader
         Console.ResetColor();
     }
 
+
     private static bool CheckJackpot(char[] loaderPositions, int positions)
     {
         for (int j = 0; j < positions - 1; j++)
@@ -155,12 +172,14 @@ public class Loader
         Array.Clear(loaderPositions, 0, positions);
         int clippedColor = (int)ConsoleColor.Blue + ((int)Console.ForegroundColor + 1 - (int)ConsoleColor.Blue) % (((int)ConsoleColor.White - (int)ConsoleColor.Blue) + 1);
         Console.ForegroundColor = (ConsoleColor)clippedColor;
-        if(Console.ForegroundColor == ConsoleColor.White)
+        if (Console.ForegroundColor == ConsoleColor.White)
         {
             // Increment Background Color
             int bgClippedColor = (int)ConsoleColor.Black + ((int)Console.BackgroundColor + 1 - (int)ConsoleColor.Black) % (((int)ConsoleColor.DarkYellow - (int)ConsoleColor.Black) + 1);
             Console.BackgroundColor = (ConsoleColor)bgClippedColor;
         }
+        LastForegroundColor = Console.ForegroundColor;
+        LastBackgroundColor = Console.BackgroundColor;
         return true;
     }
 
@@ -178,7 +197,7 @@ public class Loader
 
     private static char GetLoaderChar()
     {
-        char loaderChar = LoaderChars[loaderPosition];
+        char loaderChar = LoaderChars![loaderPosition];
         SpinLoader(1);
         return loaderChar;
     }
@@ -189,7 +208,7 @@ public class Loader
         {
             return;
         }
-        count %= LoaderChars.Length;
+        count %= LoaderChars!.Length;
         if (backwards)
         {
             loaderPosition += (LoaderChars.Length - count);
@@ -199,6 +218,57 @@ public class Loader
             loaderPosition += count;
         }
         loaderPosition %= LoaderChars.Length;
+    }
+
+
+    readonly private static int[] waitPattern = [300, 300, 200, 300, 100, 200, 100, 200];
+    public static async Task Wait2(string symbols, CancellationToken cancellationToken)
+    {
+        LoaderChars = null;
+        if (!string.IsNullOrEmpty(symbols))
+        {
+            LoaderChars = symbols.ToCharArray();
+        }
+        CheckLoader();
+
+        int currCol = Console.CursorLeft;
+        int iWaitPattern = 0;
+
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                Raffle(loaderPositions, loaderSlots);
+
+                _ = CheckJackpot(loaderPositions, loaderSlots);
+
+                Console.Write(loaderPositions);
+                Console.CursorLeft = currCol;
+                await Task.Delay(waitPattern[iWaitPattern++ % waitPattern.Length], cancellationToken);
+            }
+            catch
+            {
+                Array.Fill(loaderPositions, ' ');
+                Console.Write(loaderPositions);
+                Console.CursorLeft = currCol;
+            }
+        }
+        Console.ResetColor();
+    }
+
+    private static void Raffle(char[] loaderPositions, int positions)
+    {
+        for (int i = 0; i < positions; i++)
+        {
+            loaderPositions[i] = LoaderChars![Random.Shared.Next(0, LoaderChars.Length)];
+        }
+    }
+
+    public static void Stop(CancellationTokenSource cts)
+    {
+        cts.Cancel();
+        Thread.Sleep(50);
     }
 }
 
