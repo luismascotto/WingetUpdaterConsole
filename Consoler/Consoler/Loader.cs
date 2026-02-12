@@ -5,10 +5,9 @@ namespace Consoler;
 
 public class Loader
 {
-    private static char[]? LoaderChars;
+    private static char[] LoaderChars = [];
     //static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
-    //Write a function that writes dots on console until receives a cancellation token
-    private const string defaultSymbols = "-\\|/";
+    //private const string defaultSymbols = "-\\|/";
     static readonly string[] defaultSymbolsList = ["-\\|/", "+=-*", "mMwW", "0OoC", ".;:|", "({[<", ")}]>"];
 
     private static int i = 0;
@@ -43,7 +42,6 @@ public class Loader
     private static ConsoleColor LastForegroundColor = ConsoleColor.White;
     private static ConsoleColor LastBackgroundColor = ConsoleColor.Black;
 
-
     private static void CheckLoader()
     {
         if (waitMs < minWaitMs || waitMs > maxWaitMs || i < 0)
@@ -55,7 +53,7 @@ public class Loader
         }
         if (LoaderChars == null || LoaderChars.Length < 2)
         {
-            LoaderChars = defaultSymbolsList[Random.Shared.Next(0, defaultSymbolsList.Length)].ToCharArray();
+            LoaderChars = defaultSymbolsList.GetRandomOrDefault().ToCharArray();
         }
         Array.Clear(loaderPositions, 0, loaderSlots);
         Console.ForegroundColor = LastForegroundColor;
@@ -90,7 +88,7 @@ public class Loader
             if (countRandom > 0)
             {
                 countRandom--;
-                SpinLoader(Random.Shared.Next(0, LoaderChars!.Length));
+                SpinLoader(Random.Shared.Next(0, LoaderChars.Length));
             }
             loaderPositions[loaderSlot] = GetLoaderChar();
             Console.Write(loaderPositions[loaderSlot]);
@@ -221,47 +219,68 @@ public class Loader
     }
 
 
-    readonly private static int[] waitPattern = [300, 300, 200, 300, 100, 200, 100, 200];
+    readonly private static int[] wait2Pattern = [300, 300, 200, 300, 100, 200, 100, 200];
     public static async Task Wait2(string symbols, CancellationToken cancellationToken)
     {
-        LoaderChars = null;
-        if (!string.IsNullOrEmpty(symbols))
+        if (cancellationToken.IsCancellationRequested)
         {
-            LoaderChars = symbols.ToCharArray();
+            return;
         }
-        CheckLoader();
-
-        int currCol = Console.CursorLeft;
-        int iWaitPattern = 0;
-
-
-        while (!cancellationToken.IsCancellationRequested)
+        bool randomizeSymbols = string.IsNullOrEmpty(symbols);
+        try
         {
-            try
+            if (!randomizeSymbols && LoaderChars.Length == 0)
             {
-                Raffle(loaderPositions, loaderSlots);
-
-                _ = CheckJackpot(loaderPositions, loaderSlots);
-
-                Console.Write(loaderPositions);
-                Console.CursorLeft = currCol;
-                await Task.Delay(waitPattern[iWaitPattern++ % waitPattern.Length], cancellationToken);
+                LoaderChars = symbols.ToCharArray();
             }
-            catch
+            CheckLoader();
+
+            int currCol = Console.CursorLeft;
+            int iWaitPattern = 0;
+
+
+            while (true)
             {
-                Array.Fill(loaderPositions, ' ');
-                Console.Write(loaderPositions);
-                Console.CursorLeft = currCol;
+                try
+                {
+                    Raffle(loaderPositions, loaderSlots);
+
+                    _ = CheckJackpot(loaderPositions, loaderSlots);
+
+                    Console.Write(loaderPositions);
+                    Console.CursorLeft = currCol;
+                    await Task.Delay(wait2Pattern[iWaitPattern++ % wait2Pattern.Length], cancellationToken);
+                }                
+                catch 
+                {
+                    // Supress any
+                    return;
+                }
             }
         }
+        finally
+        {
+            ResetLoader();
+            if(randomizeSymbols)
+            {
+                Array.Clear(LoaderChars);
+            }
+        }
+    }
+
+    private static void ResetLoader()
+    {
         Console.ResetColor();
+        Array.Fill(loaderPositions, ' ');
+        Console.WriteLine(loaderPositions);
+        //Console.CursorLeft = currCol;
     }
 
     private static void Raffle(char[] loaderPositions, int positions)
     {
         for (int i = 0; i < positions; i++)
         {
-            loaderPositions[i] = LoaderChars![Random.Shared.Next(0, LoaderChars.Length)];
+            loaderPositions[i] = LoaderChars[Random.Shared.Next(0, LoaderChars.Length)];
         }
     }
 

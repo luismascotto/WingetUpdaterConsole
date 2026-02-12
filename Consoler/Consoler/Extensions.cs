@@ -64,4 +64,22 @@ public static class Extensions
         ex.Print(message);
         Functions.WaitEnterKeyUpTo(30000).Wait();
     }
+
+    public static T GetRandomOrDefault<T>(this List<T>? list)
+    {
+        if (list != default && list.Count > 0)
+        {
+            return list[Random.Shared.Next(0, list.Count)];
+        }
+        return default!;
+    }
+
+    public static T GetRandomOrDefault<T>(this T[]? array)
+    {
+        if (array != default && array.Length > 0)
+        {
+            return array[Random.Shared.Next(0, array.Length)];
+        }
+        return default!;
+    }
 }
