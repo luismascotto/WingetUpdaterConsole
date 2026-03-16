@@ -54,23 +54,37 @@ public class Functions
             {
                 return 0; // Do not compare versions
             }
-            var my = actual.Split('.');
-            var other = found.Split('.');
+            var my = actual.Split('.').Select(m => int.Parse(m)).ToArray();
+            var other = found.Split('.').Select(o => int.Parse(o)).ToArray();
 
             int iMinLen = Math.Min(my.Length, other.Length);
-
-            for (int i = 0; i < iMinLen; i++)
+            int iMaxLen = Math.Max(my.Length, other.Length);
+            if (iMinLen > 1 && (iMaxLen - iMinLen is >= 0 and < 3) && my[0] >= other[0])
             {
-                if (int.Parse(my[i]) > int.Parse(other[i]))
+                return actual.CompareTo(found);
+            }
+
+            for (int i = 0; i < iMaxLen; i++)
+            {
+                if (i == 0 && (my[i] < other[i]))
+                {
+                    return -2;
+                }
+                if (i >= my.Length)
+                {
+                    return -1;
+                }
+                if (i >= other.Length)
                 {
                     return 1;
                 }
-                if (int.Parse(my[i]) < int.Parse(other[i]))
+                if (my[i] > other[i])
                 {
-                    if (i == 0)
-                    {
-                        return -2;
-                    }
+                    return 1;
+                }
+                if (my[i] < other[i])
+                {
+
                     return -1;
                 }
             }
@@ -173,7 +187,7 @@ public class Functions
         var spanText = text.AsSpan();
         while (spanText.Length > 0)
         {
-            if(spanText.Length <= realWidth)
+            if (spanText.Length <= realWidth)
             {
                 realWidth = spanText.Length;
             }
@@ -194,6 +208,11 @@ public class Functions
             return;
         }
         Console.Write(Spaces.AsSpan()[..count]);
+    }
+
+    public static string GenerateOutputFilename(string path, string prefix, string extension)
+    {
+        return $"{path}{prefix}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}_{DateTime.Now.Ticks:X16}.{extension}";
     }
 }
 
