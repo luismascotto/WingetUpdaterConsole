@@ -19,7 +19,7 @@ public class Program
 
     private const string _ignoredAppsFilename = "ignored.dat";
 
-    private static string? _strPath;
+    private static readonly string _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
 
     private static bool _DebugLoader;
     private static int _LoaderType;
@@ -34,7 +34,6 @@ public class Program
                { "--symbols", "LoaderSymbols" },
            };
 
-        _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}{Path.DirectorySeparatorChar}";
 
         IConfiguration config = new ConfigurationBuilder()
             .AddCommandLine(args, switchMappings)
@@ -230,6 +229,7 @@ public class Program
         string idFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.ID.Length)}}}";
         string curVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Versao.Length)}}}";
         string avlbVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Disponivel.Length)}}}";
+        appsFoundToUpdate.Sort((a, b) => string.Compare(a.Nome, b.Nome, StringComparison.OrdinalIgnoreCase));
         foreach (var app in appsFoundToUpdate)
         {
             var (column, line) = Console.GetCursorPosition();
@@ -269,7 +269,7 @@ public class Program
             Console.Write(curVerFmt, app.Versao);
             Console.Write(" --> ");
             int rightPadding = appsFoundToUpdate.Max(found => found.Disponivel.Length) - app.Disponivel.Length;
-            PrintNewVersion(app, rightPadding);
+            PrintNewVersion(app, rightPadding, isIgnored);
             //Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
             if (compare <= 0)
@@ -334,7 +334,7 @@ public class Program
         int iUpdates = await ProcessUpdatesAsync(appsToUpdate, token).ConfigureAwait(false);
         if (iUpdates == 0)
         {
-            Console.WriteLine("Nenhum update disponível");
+            Console.WriteLine("Nenhum update disponível ou realizado");
         }
         else
         {
@@ -344,7 +344,7 @@ public class Program
         await Functions.WaitEnterKeyUpTo(iUpdates == 0 ? 2000 : 4000);
     }
 
-    private static void PrintNewVersion(App app, int disponivelPad)
+    private static void PrintNewVersion(App app, int disponivelPad, bool isIgnored)
     {
         int iCompVersion = 0;
         var currSemVer = app.Versao.Split('.');
@@ -368,7 +368,7 @@ public class Program
             }
             else if (currSemVer[iCompVersion] != nextSemVer[iCompVersion])
             {
-                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.ForegroundColor = isIgnored ? ConsoleColor.DarkYellow : ConsoleColor.Yellow;
             }
             Console.Write(nextSemVer[iCompVersion]);
             iCompVersion++;
@@ -394,6 +394,7 @@ public class Program
         var strBuilder = new StringBuilder();
         foreach (string appID in appsToUpdate)
         {
+            _ = strBuilder.Clear();
             var ctsLoader = new CancellationTokenSource();
             try
             {
@@ -422,23 +423,20 @@ public class Program
                 Console.WriteLine();
                 Console.WriteLine($"{appID} atualizado");
                 iUpdates++;
-                _ = strBuilder.Clear();
             }
             catch (Exception ex)
             {
                 Loader.Stop(ctsLoader);
-                //ctsLoader.Cancel();
-                //await Task.Delay(50, CancellationToken.None);
-                //Console.Write("\b  ");
 
                 Console.WriteLine();
-                Console.WriteLine($"{appID} EXCEPTION");
-                Console.WriteLine(strBuilder.ToString());
+                Console.WriteLine($"{appID} EXCEPTION! Check output log for more information");
+                Console.WriteLine($"{ex.Message}");
                 try
                 {
-                    await File.AppendAllTextAsync($"{_strPath}exception_update_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now.Ticks:X16}.txt",
-                        ex.ToString(),
-                        CancellationToken.None)
+                    var filename = Functions.GenerateOutputFilename(_strPath, $"exception_update_{appID}", "txt");
+                    await File.AppendAllTextAsync(filename, ex.ToString(), CancellationToken.None)
+                        .ConfigureAwait(false); 
+                    await File.AppendAllTextAsync(filename, strBuilder.ToString(), CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch

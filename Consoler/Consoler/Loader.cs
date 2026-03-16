@@ -8,7 +8,7 @@ public class Loader
     private static char[] LoaderChars = [];
     //static readonly char[] LoaderChars = ['|', '/', '-', '\\'];
     //private const string defaultSymbols = "-\\|/";
-    static readonly string[] defaultSymbolsList = ["-\\|/", "+=-*", "mMwW", "0OoC", ".;:|", "({[<", ")}]>"];
+    static readonly string[] defaultSymbolsList = ["-\\|/", "+=-*", "mMwW", "0OoC", ".;:,", "({[|", ")}]|"];
 
     private static int i = 0;
     private static int waitMs = maxWaitMs;
@@ -229,7 +229,7 @@ public class Loader
         bool randomizeSymbols = string.IsNullOrEmpty(symbols);
         try
         {
-            if (!randomizeSymbols && LoaderChars.Length == 0)
+            if (!randomizeSymbols && LoaderChars.Length < 2)
             {
                 LoaderChars = symbols.ToCharArray();
             }
@@ -263,7 +263,7 @@ public class Loader
             ResetLoader();
             if(randomizeSymbols)
             {
-                Array.Clear(LoaderChars);
+                Array.Resize(ref LoaderChars, 0);
             }
         }
     }
