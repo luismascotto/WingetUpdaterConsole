@@ -82,4 +82,15 @@ public static class Extensions
         }
         return default!;
     }
+
+    public static int ParseNatural(this ReadOnlySpan<char> str, int defaultValue = -1)
+    {
+        if (int.TryParse(str, out int result) && result >= 0)
+        {
+            return result;
+        }
+        return defaultValue;
+    }
+    
+
 }

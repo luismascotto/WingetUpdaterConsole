@@ -46,59 +46,72 @@ public class Functions
             Console.SetCursorPosition(0, --currentLine);
         } while (extraLinesUp-- > 0);
     }
-    public static int VersionComparer(string actual, string found)
+
+    public enum VersionDiffTypeResult
+    {
+        NotAnalysed = 0,
+        Simple,
+        Major,
+        Invalid,
+        Exception
+    }
+
+
+    public static VersionDiffTypeResult VersionDiffType(string actual, string updated)
     {
         try
         {
-            if (actual.Contains('<') || found.Contains('>'))
+            if (actual.IsEmpty() || updated.IsEmpty() || actual.Contains('<') || updated.Contains('>'))
             {
-                return 0; // Do not compare versions
-            }
-            var my = actual.Split('.').Select(m => int.Parse(m)).ToArray();
-            var other = found.Split('.').Select(o => int.Parse(o)).ToArray();
-
-            int iMinLen = Math.Min(my.Length, other.Length);
-            int iMaxLen = Math.Max(my.Length, other.Length);
-            if (iMinLen > 1 && (iMaxLen - iMinLen is >= 0 and < 3) && my[0] >= other[0])
-            {
-                return actual.CompareTo(found);
+                return VersionDiffTypeResult.NotAnalysed; // Do not compare versions
             }
 
-            for (int i = 0; i < iMaxLen; i++)
-            {
-                if (i == 0 && (my[i] < other[i]))
-                {
-                    return -2;
-                }
-                if (i >= my.Length)
-                {
-                    return -1;
-                }
-                if (i >= other.Length)
-                {
-                    return 1;
-                }
-                if (my[i] > other[i])
-                {
-                    return 1;
-                }
-                if (my[i] < other[i])
-                {
+            var mySpan = actual.AsSpan().Split('.');
+            var foundSpan = updated.AsSpan().Split('.');
 
-                    return -1;
+
+            int myVer = -1;
+            int foundVer = -1;
+            while (true)
+            {
+                if (mySpan.MoveNext())
+                {
+                    myVer = mySpan.Source[mySpan.Current].ParseNatural();
                 }
+                if (foundSpan.MoveNext())
+                {
+                    foundVer = foundSpan.Source[foundSpan.Current].ParseNatural();
+                }
+                //Here if both are 0, we reached the end of both versions, they are invalid
+                if (myVer == -1 && foundVer == -1)
+                {
+                    break;
+                }
+                //Here if both are equal, go to next part
+                if (myVer == foundVer)
+                {
+                    continue;
+                }
+
+                //We got a winner
+                if (foundVer > myVer)
+                {
+                    return foundSpan.Current.Start.Value == 0 ? VersionDiffTypeResult.Major : VersionDiffTypeResult.Simple;
+                }
+                //Here myVer > foundVer
+                break;
             }
 
-            return 0;
+            return VersionDiffTypeResult.Invalid;
         }
         catch (Exception ex)
         {
-            ex.PrintAndWait($"##########      EXCEPTION ({actual} vs ({found}))     ########");
+            ex.PrintAndWait($"##########      EXCEPTION ({actual} vs ({updated}))     ########");
             //Console.ForegroundColor = ConsoleColor.Red;
             //Console.WriteLine($"##########      EXCEPTION ({actual} vs ({found}))     ######## {ex.Message}");
             //Console.ResetColor();
             Thread.Sleep(100);
-            return 2;
+            return VersionDiffTypeResult.Exception;
         }
     }
 

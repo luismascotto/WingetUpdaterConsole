@@ -233,35 +233,36 @@ public class Program
         foreach (var app in appsFoundToUpdate)
         {
             var (column, line) = Console.GetCursorPosition();
-            int compare = Functions.VersionComparer(app.Versao, app.Disponivel);
+            var diffType = Functions.VersionDiffType(app.Versao, app.Disponivel);
             bool isIgnored = false;
-            if (compare > 1)
+            switch (diffType)
             {
-                Functions.RevertLastWriteEx(column, line);
-                continue;
-            }
+                case Functions.VersionDiffTypeResult.Exception:
+                    Functions.RevertLastWriteEx(column, line);
+                    continue;
+                case Functions.VersionDiffTypeResult.Major or Functions.VersionDiffTypeResult.Simple:
+                    {
+                        isIgnored = appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel);
+                        if (isIgnored)
+                        {
+                            Console.ForegroundColor = ConsoleColor.DarkGray;
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            appsUpdateable.Add(app);
+                        }
 
-            if (compare > 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-            }
-            else if (compare < 0)
-            {
-                isIgnored = appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel);
-                if (isIgnored)
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.Green;
+                        break;
+                    }
+
+                case Functions.VersionDiffTypeResult.Invalid:
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    break;
+                default:
+                    Console.ForegroundColor = ConsoleColor.Yellow;
                     appsUpdateable.Add(app);
-                }
-            }
-            else
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                appsUpdateable.Add(app);
+                    break;
             }
 
             Console.Write(idFmt, app.ID);
@@ -272,21 +273,32 @@ public class Program
             PrintNewVersion(app, rightPadding, isIgnored);
             //Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
-            if (compare <= 0)
+            switch (diffType)
             {
-                Console.Write($" - disponível");
-                if (isIgnored)
-                {
-                    Console.Write($" PORÉM ignorado...");
-                }
-                else if (compare == 0)
-                {
-                    Console.Write($" - Por sua conta e Risco...");
-                }
-                else if (compare < -1)
-                {
-                    Console.Write($" - Atenção*");
-                }
+                case Functions.VersionDiffTypeResult.Simple:
+                    {
+                        Console.Write($" - disponível");
+                        if (isIgnored)
+                        {
+                            Console.Write($" PORÉM ignorado...");
+                        }
+                    }
+                    break;
+
+                case Functions.VersionDiffTypeResult.Major:
+                    {
+                        Console.Write($" - Atenção*");
+                    }
+                    break;
+
+                case Functions.VersionDiffTypeResult.NotAnalysed:
+                    {
+                        Console.Write($" - Por sua conta e Risco...");
+                    }
+                    break;
+
+                default: Console.ForegroundColor = ConsoleColor.Red; break;
+
             }
             Console.WriteLine();
         }
@@ -435,7 +447,7 @@ public class Program
                 {
                     var filename = Functions.GenerateOutputFilename(_strPath, $"exception_update_{appID}", "txt");
                     await File.AppendAllTextAsync(filename, ex.ToString(), CancellationToken.None)
-                        .ConfigureAwait(false); 
+                        .ConfigureAwait(false);
                     await File.AppendAllTextAsync(filename, strBuilder.ToString(), CancellationToken.None)
                         .ConfigureAwait(false);
                 }
