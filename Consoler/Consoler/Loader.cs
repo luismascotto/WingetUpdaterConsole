@@ -245,7 +245,7 @@ public class Loader
                 {
                     Raffle(loaderPositions, loaderSlots);
 
-                    _ = CheckJackpot(loaderPositions, loaderSlots);
+                    CheckJackpot(loaderPositions, loaderSlots);
 
                     Console.Write(loaderPositions);
                     Console.CursorLeft = currCol;

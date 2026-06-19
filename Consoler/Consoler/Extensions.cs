@@ -1,4 +1,6 @@
-﻿namespace Consoler;
+﻿using System.Text;
+
+namespace Consoler;
 
 public static class Extensions
 {
@@ -56,13 +58,49 @@ public static class Extensions
         Functions.WriteLineWrapIndented(ex.StackTrace);
         Console.ResetColor();
         Console.WriteLine();
-        
+
     }
 
     public static void PrintAndWait(this Exception ex, string message = "")
     {
         ex.Print(message);
         Functions.WaitEnterKeyUpTo(30000).Wait();
+    }
+
+    public static void AppendToTimestampFile(this Exception ex, string path, string nameSuffix)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Join(path, $"{nameSuffix}_{DateTime.Now.MyFileTimestamp()}.txt"),
+                ex.ToString()
+            );
+        }
+        catch (Exception aex)
+        {
+            Console.WriteLine($"Erro ao salvar exceção: {aex.Message}");
+        }
+    }
+    public static void AppendToTimestampFile(this StringBuilder sb, string path, string nameSuffix)
+    {
+        try
+        {
+            using var writer = new StreamWriter(
+                Path.Join(path, $"{nameSuffix}_{DateTime.Now.MyFileTimestamp()}.txt"),
+                append: true,
+                Encoding.UTF8
+            );
+
+            // Iterate through internal chunks without materializing the whole string
+            foreach (ReadOnlyMemory<char> chunk in sb.GetChunks())
+            {
+                writer.Write(chunk.Span);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao salvar output: {ex.Message}");
+        }
     }
 
     public static T GetRandomOrDefault<T>(this List<T>? list)
@@ -91,6 +129,4 @@ public static class Extensions
         }
         return defaultValue;
     }
-    
-
 }

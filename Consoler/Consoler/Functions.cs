@@ -66,8 +66,10 @@ public class Functions
                 return VersionDiffTypeResult.NotAnalysed; // Do not compare versions
             }
 
-            var mySpan = actual.AsSpan().Split('.');
-            var foundSpan = updated.AsSpan().Split('.');
+            char separator = actual.Contains('-') ? '-' : '.';
+
+            var mySpan = actual.AsSpan().Split(separator);
+            var foundSpan = updated.AsSpan().Split(separator);
 
 
             int myVer = -1;
@@ -115,10 +117,42 @@ public class Functions
         }
     }
 
+    public static void PrintNewVersion(string actual, string updated, int disponivelPad, bool isIgnored)
+    {
+        int iCompVersion = 0;
+        char separator = actual.Contains('-') ? '-' : '.';
+    
+        var currSemVer = actual.Split(separator);
+        var nextSemVer = updated.Split(separator);
+   
+        while (iCompVersion < nextSemVer.Length)
+        {
+            if (iCompVersion >= currSemVer.Length)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+            }
+            else if (currSemVer[iCompVersion] != nextSemVer[iCompVersion])
+            {
+                Console.ForegroundColor = isIgnored ? ConsoleColor.DarkYellow : ConsoleColor.Yellow;
+            }
+            Console.Write(nextSemVer[iCompVersion]);
+            iCompVersion++;
+            if (iCompVersion < nextSemVer.Length)
+            {
+                Console.Write(separator);
+            }
+        }
+
+        if (disponivelPad > 0)
+        {
+            Console.Write(Spaces[..disponivelPad]);
+        }
+    }
+
     public static void RevertLastWrite(int previousCol, int previousLine)
     {
         int currentLine = Console.CursorTop;
-        int currentCol = Console.CursorLeft;
+        //int currentCol = Console.CursorLeft;
 
         while (currentLine >= previousLine)
         {
@@ -162,9 +196,13 @@ public class Functions
         }
     }
 
-    public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds)
+    public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds, string message = "")
     {
-        _ = await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(PressEnter)])
+        if(message.HasSomething())
+        {
+            Console.WriteLine(message);
+        }
+        await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(PressEnter)])
            .ConfigureAwait(false);
     }
 
@@ -226,6 +264,15 @@ public class Functions
     public static string GenerateOutputFilename(string path, string prefix, string extension)
     {
         return $"{path}{prefix}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}_{DateTime.Now.Ticks:X16}.{extension}";
+    }
+
+    public static string GetResponseFilePath(string responseFile)
+    {
+        if (Path.IsPathFullyQualified(responseFile))
+        {
+            return responseFile;
+        }
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, responseFile);
     }
 }
 
