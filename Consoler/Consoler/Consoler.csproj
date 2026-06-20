@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>res\icon-for-update-11.ico</ApplicationIcon>
+    <BaseOutputPath>..\OutputBin\</BaseOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,10 @@
     <PackageReference Include="InterpolatedParser" Version="1.1.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FakeWinget\FakeWinget.csproj" />
   </ItemGroup>
 
 </Project>

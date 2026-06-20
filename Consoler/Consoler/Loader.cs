@@ -61,7 +61,7 @@ public class Loader
 
     }
 
-    public static async Task Wait(CancellationToken cancellationToken)
+    public static async Task Wait_Old(CancellationToken cancellationToken)
     {
         CheckLoader();
         int loaderSlot = GetNextLoaderSlot();
@@ -220,7 +220,7 @@ public class Loader
 
 
     readonly private static int[] wait2Pattern = [300, 300, 200, 300, 100, 200, 100, 200];
-    public static async Task Wait2(string symbols, CancellationToken cancellationToken)
+    public static async Task Wait(string symbols, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -250,8 +250,8 @@ public class Loader
                     Console.Write(loaderPositions);
                     Console.CursorLeft = currCol;
                     await Task.Delay(wait2Pattern[iWaitPattern++ % wait2Pattern.Length], cancellationToken);
-                }                
-                catch 
+                }
+                catch
                 {
                     // Supress any
                     return;
@@ -261,7 +261,7 @@ public class Loader
         finally
         {
             ResetLoader();
-            if(randomizeSymbols)
+            if (randomizeSymbols)
             {
                 Array.Resize(ref LoaderChars, 0);
             }
@@ -286,7 +286,10 @@ public class Loader
 
     public static void Stop(CancellationTokenSource cts)
     {
-        cts.Cancel();
+        if (!cts.IsCancellationRequested)
+        {
+            cts.Cancel();
+        }
         Thread.Sleep(50);
     }
 }

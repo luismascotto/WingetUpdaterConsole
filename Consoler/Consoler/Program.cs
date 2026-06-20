@@ -18,7 +18,7 @@ public class Program
     }
 
     //private const int _DAYSTOKEEPLOGS = 14;
-    private const int _QTY_LOGS = 10;
+    private const int _QTY_LOGS = 50;
     private const string _EXCEPTION_FILE = "exception";
     private const string _UPD_EXCEPTION_FILE = "update";
     private const string _OUTPUT_FILE = "winget_output";
@@ -27,6 +27,7 @@ public class Program
     private const string _ignoredAppsFilename = "ignored.json";
     const string STR_Winget = "winget";
     const string STR_Update = "upgrade";
+    const string STR_FakeWinget = "FakeWinget";
 
     private static readonly string _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}";
 
@@ -67,6 +68,9 @@ public class Program
         _LoaderSymbols = config["LoaderSymbols"] ?? "";
 
         _ResponseFile = config["ResponseFile"] ?? "";
+        
+        string wingetCommand = STR_Winget;
+
         if (_ResponseFile.HasSomething() && !File.Exists(_ResponseFile))
         {
             _ResponseFile = Functions.GetResponseFilePath(_ResponseFile);
@@ -75,6 +79,8 @@ public class Program
             {
                 throw new FileNotFoundException($"Response file not found: {_ResponseFile}");
             }
+            wingetCommand = STR_FakeWinget;
+
         }
 
         Console.OutputEncoding = Encoding.UTF8;
@@ -88,34 +94,43 @@ public class Program
             return;
         }
         Console.Title = "winget-upgrade";
+        while (true)
+        {
+            bool flowControl = await ExecuteUpgradeCheckAsync(wingetCommand, _LoaderSymbols, _ResponseFile).ConfigureAwait(false);
+            if (!flowControl)
+            {
+                return;
+            }
+        }
+    }
+
+    private static async Task<bool> ExecuteUpgradeCheckAsync(string wingetCommand, string loaderSymbols, string responseFile)
+    {
+        Console.Clear();
         Console.WriteLine("\t\tWINGET");
         var ctsLoader = new CancellationTokenSource();
         var ctsMain = new CancellationTokenSource();
         try
         {
-            switch (_LoaderType)
-            {
-                case 1:
-                    _ = Loader.Wait(ctsLoader!.Token);
-                    break;
-                case 2:
-                    _ = Loader.Wait2(_LoaderSymbols, ctsLoader!.Token);
-                    break;
-            }
-            if (_DebugLoader)
-            {
-                await Functions.WaitEnterKeyUpTo(600000);
-                Loader.Stop(ctsLoader);
-                return;
-            }
+            _ = Loader.Wait(loaderSymbols, ctsLoader!.Token);
+            //switch (_LoaderType)
+            //{
+            //    case 1:
+            //        _ = Loader.Wait_Old(ctsLoader!.Token);
+            //        break;
+            //    case 2:
+            //        _ = Loader.Wait(_LoaderSymbols, ctsLoader!.Token);
+            //        break;
+            //}
+
             var sbOutput = new StringBuilder();
-            if (_ResponseFile.HasSomething())
+            if (responseFile.HasSomething())
             {
-                sbOutput.Append(File.ReadAllText(_ResponseFile));
+                sbOutput.AppendLine(File.ReadAllText(responseFile));
             }
             else
             {
-                await Cli.Wrap(STR_Winget).WithArguments(STR_Update)
+                await Cli.Wrap(wingetCommand).WithArguments(STR_Update)
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => sbOutput.AppendLine(str)))
                     .WithValidation(CommandResultValidation.None)
                     .ExecuteAsync().ConfigureAwait(false);
@@ -123,30 +138,31 @@ public class Program
             Loader.Stop(ctsLoader);
             if (sbOutput.Length == 0)
             {
-                return;
+                await Functions.WaitEnterKeyUpTo(5000, "Sem resposta do winget");
+                return false;
             }
 
             Console.WriteLine();
             Console.WriteLine();
-            if (_ResponseFile.IsEmpty())
-            {
-                sbOutput.AppendToTimestampFile(_strPath, _OUTPUT_FILE);
-                await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
-            }
+            sbOutput.AppendToTimestampFile(_strPath, _OUTPUT_FILE);
+            await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
 
-            await ProcessListAsync(sbOutput).ConfigureAwait(false);
+
+            var processListResult = await ProcessListAsync(sbOutput).ConfigureAwait(false);
 
         }
         catch (Exception ex)
         {
             Loader.Stop(ctsLoader);
-            ex.AppendToTimestampFile(_strPath, "main");
+            ex.AppendToTimestampFile(_strPath, "exception_main");
 
             ex.PrintAndWait("Erro ao atualizar...");
         }
+
+        return true;
     }
 
-    private static async Task ProcessListAsync(StringBuilder sbInput, CancellationToken ct = default)
+    private static async Task<bool> ProcessListAsync(StringBuilder sbInput, CancellationToken ct = default)
     {
         // Scan lines until starts with "Name" and contains "winget"
         var lines = sbInput.ToString().Split(Environment.NewLine);
@@ -154,7 +170,7 @@ public class Program
         if (startLineIndex == -1)
         {
             await Functions.WaitEnterKeyUpTo(2000, "Nenhum app encontrado para atualizar");
-            return;
+            return false;
         }
         int indexID = lines[startLineIndex].IndexOf("ID");
         int IDSize = lines[startLineIndex].IndexOf("Vers") - indexID;
@@ -222,7 +238,7 @@ public class Program
         {
             Console.WriteLine("Nenhum app encontrado para atualizar");
             await Functions.WaitEnterKeyUpTo(2000);
-            return;
+            return false;
         }
         List<App> appsToIgnore = await LoadAppsIgnoredAsync(ct).ConfigureAwait(false);
 
@@ -352,15 +368,16 @@ public class Program
         if (appsToUpdate.Count == 0)
         {
             await Functions.WaitEnterKeyUpTo(1000, "Nenhum update para realizar...");
-            return;
+            return false;
         }
         int iUpdates = await ProcessUpdatesAsync(appsToUpdate, ct).ConfigureAwait(false);
         if (iUpdates == 0)
         {
             await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi realizado");
-            return;
+            return false;
         }
         await Functions.WaitEnterKeyUpTo(4000, $"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
+        return true;
 
     }
 
@@ -432,10 +449,10 @@ public class Program
                 switch (_LoaderType)
                 {
                     case 1:
-                        _ = Loader.Wait(ctsLoader!.Token);
+                        _ = Loader.Wait_Old(ctsLoader!.Token);
                         break;
                     case 2:
-                        _ = Loader.Wait2(_LoaderSymbols!, ctsLoader!.Token);
+                        _ = Loader.Wait(_LoaderSymbols!, ctsLoader!.Token);
                         break;
                 }
                 await Cli.Wrap(STR_Winget).WithArguments([STR_Update, appID, "--silent"])
@@ -501,19 +518,21 @@ public class Program
                 switch (loaderType)
                 {
                     case 1:
-                        _ = Loader.Wait(ctsLoader!.Token);
+                        _ = Loader.Wait_Old(ctsLoader!.Token);
                         break;
                     case 2:
-                        _ = Loader.Wait2(loaderSymbols, ctsLoader!.Token);
+                        _ = Loader.Wait(loaderSymbols, ctsLoader!.Token);
                         break;
                 }
                 Functions.WaitEnterKeyUpTo(600000).Wait();
-                Loader.Stop(ctsLoader);
             }
             catch
             {
-                Loader.Stop(ctsLoader);
                 break;
+            }
+            finally
+            {
+                Loader.Stop(ctsLoader);
             }
         }
     }
@@ -529,7 +548,6 @@ public class Program
             Console.WriteLine($"Erro ao salvar apps ignorados: {ex.Message}");
         }
     }
-
 
     private static async Task<List<App>> LoadAppsIgnoredAsync(CancellationToken ct = default)
     {
