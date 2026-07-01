@@ -11,17 +11,34 @@ public class Program
 {
     struct App
     {
-        public string Nome;
-        public string ID;
-        public string Versao;
-        public string Disponivel;
+        public string strName;
+        public string strID;
+        public string strVersion;
+        public string strNewVersion;
+        public int intState;
+    }
+
+    struct Config
+    {
+        public string WingetCommand;
+        public bool DebugLoader;
+        public int LoaderType;
+        public string LoaderSymbols;
+        public string ResponseFile;
+        public StringBuilder sbResponse;
+
     }
 
     //private const int _DAYSTOKEEPLOGS = 14;
     private const int _QTY_LOGS = 50;
+    private const int _QTY_RUNS = 5;
     private const string _EXCEPTION_FILE = "exception";
     private const string _UPD_EXCEPTION_FILE = "update";
     private const string _OUTPUT_FILE = "winget_output";
+
+    private const int _STATE_SELECTED = 1;
+    private const int _STATE_IGNORED = 2;
+    private const int _STATE_ERROR = 3;
 
 
     private const string _ignoredAppsFilename = "ignored.json";
@@ -31,11 +48,7 @@ public class Program
 
     private static readonly string _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}";
 
-    private static bool _DebugLoader;
-    private static int _LoaderType;
-    private static string? _LoaderSymbols;
-    private static string? _ResponseFile;
-
+    private static int _STATE_AVAILABLE;
     static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -53,58 +66,55 @@ public class Program
            };
 
 
-        IConfiguration config = new ConfigurationBuilder()
+        IConfiguration configuration = new ConfigurationBuilder()
             .AddCommandLine(args, switchMappings)
             .Build();
 
-        if (!bool.TryParse(config["DebugLoader"] ?? "false", out _DebugLoader))
+        Config config = new()
         {
-            throw new ArgumentException("Invalid DebugLoader value");
-        }
-        if (!int.TryParse(config["LoaderType"] ?? "1", out _LoaderType))
+            sbResponse = new StringBuilder(),
+            DebugLoader = bool.Parse(configuration["DebugLoader"] ?? "false"),
+            LoaderType = int.Parse(configuration["LoaderType"] ?? "1"),
+            LoaderSymbols = configuration["LoaderSymbols"] ?? "",
+            ResponseFile = configuration["ResponseFile"] ?? "",
+            WingetCommand = STR_Winget
+        };
+
+        if (config.ResponseFile.HasSomething() && !File.Exists(config.ResponseFile))
         {
-            throw new ArgumentException("Invalid LoaderType value");
-        }
-        _LoaderSymbols = config["LoaderSymbols"] ?? "";
+            config.ResponseFile = Functions.GetResponseFilePath(config.ResponseFile);
 
-        _ResponseFile = config["ResponseFile"] ?? "";
-        
-        string wingetCommand = STR_Winget;
-
-        if (_ResponseFile.HasSomething() && !File.Exists(_ResponseFile))
-        {
-            _ResponseFile = Functions.GetResponseFilePath(_ResponseFile);
-
-            if (!File.Exists(_ResponseFile))
+            if (!File.Exists(config.ResponseFile))
             {
-                throw new FileNotFoundException($"Response file not found: {_ResponseFile}");
+                throw new FileNotFoundException($"Response file not found: {config.ResponseFile}");
             }
-            wingetCommand = STR_FakeWinget;
+            config.WingetCommand = STR_FakeWinget;
 
         }
 
         Console.OutputEncoding = Encoding.UTF8;
         Console.CursorVisible = false;
-        if (_DebugLoader)
+        if (config.DebugLoader)
         {
             Console.Title = "winget-upgrade-debug";
             Console.WriteLine($"\t\tWINGET (Debug Loader)");
 
-            ProcessDebugLoader(_LoaderType, _LoaderSymbols);
+            ProcessDebugLoader(config.LoaderType, config.LoaderSymbols);
             return;
         }
         Console.Title = "winget-upgrade";
+        uint safeGuard = 0;
         while (true)
         {
-            bool flowControl = await ExecuteUpgradeCheckAsync(wingetCommand, _LoaderSymbols, _ResponseFile).ConfigureAwait(false);
-            if (!flowControl)
+            bool flowControl = await ExecuteUpgradeCheckAsync(config).ConfigureAwait(false);
+            if (!flowControl || ++safeGuard > _QTY_RUNS)
             {
                 return;
             }
         }
     }
 
-    private static async Task<bool> ExecuteUpgradeCheckAsync(string wingetCommand, string loaderSymbols, string responseFile)
+    private static async Task<bool> ExecuteUpgradeCheckAsync(Config config)
     {
         Console.Clear();
         Console.WriteLine("\t\tWINGET");
@@ -112,31 +122,28 @@ public class Program
         var ctsMain = new CancellationTokenSource();
         try
         {
-            _ = Loader.Wait(loaderSymbols, ctsLoader!.Token);
-            //switch (_LoaderType)
-            //{
-            //    case 1:
-            //        _ = Loader.Wait_Old(ctsLoader!.Token);
-            //        break;
-            //    case 2:
-            //        _ = Loader.Wait(_LoaderSymbols, ctsLoader!.Token);
-            //        break;
-            //}
+            config.sbResponse.Clear();
+            try
+            {
+                _ = Loader.Wait(config.LoaderSymbols, ctsLoader!.Token);
+                if (config.ResponseFile.HasSomething())
+                {
+                    config.sbResponse.AppendLine(File.ReadAllText(config.ResponseFile));
+                }
+                else
+                {
+                    await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update], false)
+                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
+                        .WithValidation(CommandResultValidation.None)
+                        .ExecuteAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                Loader.Stop(ctsLoader);
+            }
 
-            var sbOutput = new StringBuilder();
-            if (responseFile.HasSomething())
-            {
-                sbOutput.AppendLine(File.ReadAllText(responseFile));
-            }
-            else
-            {
-                await Cli.Wrap(wingetCommand).WithArguments(STR_Update)
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => sbOutput.AppendLine(str)))
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteAsync().ConfigureAwait(false);
-            }
-            Loader.Stop(ctsLoader);
-            if (sbOutput.Length == 0)
+            if (config.sbResponse.Length == 0)
             {
                 await Functions.WaitEnterKeyUpTo(5000, "Sem resposta do winget");
                 return false;
@@ -144,131 +151,76 @@ public class Program
 
             Console.WriteLine();
             Console.WriteLine();
-            sbOutput.AppendToTimestampFile(_strPath, _OUTPUT_FILE);
+            config.sbResponse.AppendToTimestampFile(_strPath, _OUTPUT_FILE);
             await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
 
 
-            var processListResult = await ProcessListAsync(sbOutput).ConfigureAwait(false);
-
+            var appsToUpdate = await ProcessListAsync(config, ctsMain!.Token).ConfigureAwait(false);
+            if (appsToUpdate.Count == 0)
+            {
+                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update para realizar...");
+                return false;
+            }
+            int iUpdates = await ProcessUpdatesAsync(config, appsToUpdate, ctsMain!.Token).ConfigureAwait(false);
+            if (iUpdates == 0)
+            {
+                await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi realizado");
+                return false;
+            }
+            await Functions.WaitEnterKeyUpTo(4000, $"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
+            return iUpdates < appsToUpdate.Count;
         }
         catch (Exception ex)
         {
-            Loader.Stop(ctsLoader);
-            ex.AppendToTimestampFile(_strPath, "exception_main");
+            ex.AppendToTimestampFile(_strPath, _EXCEPTION_FILE);
 
             ex.PrintAndWait("Erro ao atualizar...");
         }
 
-        return true;
+        return false;
     }
 
-    private static async Task<bool> ProcessListAsync(StringBuilder sbInput, CancellationToken ct = default)
+    private static async Task<List<App>> ProcessListAsync(Config config, CancellationToken ct = default)
     {
-        // Scan lines until starts with "Name" and contains "winget"
-        var lines = sbInput.ToString().Split(Environment.NewLine);
-        int startLineIndex = Array.FindIndex(lines, line => line.StartsWith("Nome") && line.Contains("ID"));
-        if (startLineIndex == -1)
-        {
-            await Functions.WaitEnterKeyUpTo(2000, "Nenhum app encontrado para atualizar");
-            return false;
-        }
-        int indexID = lines[startLineIndex].IndexOf("ID");
-        int IDSize = lines[startLineIndex].IndexOf("Vers") - indexID;
-        //int indexVersao = lines[0].IndexOf("Vers");
-        //int VersaoSize = lines[0].IndexOf("Dispon") - indexVersao;
-
-
-
         List<App> appsFoundToUpdate = [];
-        int namePaddingLength = 18;
-        int idPaddingLength = 10;
-        for (int i = startLineIndex + 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains(STR_Winget); i++)
-        {
-            //When a application name is too long and there is any problem with encoding, sometimes it shifts from ID one or two front or back
-            var spanLine = lines[i].AsSpan();
-            var spanName = spanLine[..(indexID - 1)].TrimEnd();
-            while (spanName.Length > 0 && !char.IsBetween(spanName[^1], '!', '~'))
-            {
-                spanName = spanName[..^1];
-            }
-            if (spanName.Length == 0)
-            {
-                Console.WriteLine($"Erro ao ler ({lines[i]})");
-                continue;
-            }
-
-            int adjustedIndexID = indexID;
-            while (adjustedIndexID < lines[i].Length - 1 && !char.IsBetween(spanName[^1], '!', '~'))
-            {
-                adjustedIndexID++;
-            }
-            if (adjustedIndexID > indexID + 4)
-            {
-                Console.WriteLine($"Erro ao ler {spanName} ({lines[i]})");
-                continue;
-            }
-
-            var appToAdd = new App
-            {
-                Nome = spanName.ToString(),
-                ID = "",
-                Versao = "",
-                Disponivel = ""
-            };
-
-            var spanFromId = spanLine[adjustedIndexID..];
-
-            appToAdd = ReadAppIdAndVersions(appToAdd, spanFromId);
-
-            appsFoundToUpdate.Add(appToAdd);
-
-            //Padding
-            if (appToAdd.Nome.Length > namePaddingLength)
-            {
-                namePaddingLength = appToAdd.Nome.Length;
-            }
-
-            if (appToAdd.ID.Length > idPaddingLength)
-            {
-                idPaddingLength = appToAdd.ID.Length;
-            }
-        }
+        TextToApp(config.sbResponse.ToString(), ref appsFoundToUpdate);
 
         if (appsFoundToUpdate.Count == 0)
         {
             Console.WriteLine("Nenhum app encontrado para atualizar");
             await Functions.WaitEnterKeyUpTo(2000);
-            return false;
+            return appsFoundToUpdate;
         }
         List<App> appsToIgnore = await LoadAppsIgnoredAsync(ct).ConfigureAwait(false);
 
-        List<App> appsAvailable = [];
-        string nameFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Nome.Length)}}}";
-        string idFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.ID.Length)}}} ";
-        string curVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Versao.Length)}}}";
-        //string avlbVerFmt = $"{{0,-{appsFoundToUpdate.Max(found => found.Disponivel.Length)}}}";
-        appsFoundToUpdate.Sort((a, b) => string.Compare(a.Nome, b.Nome, StringComparison.OrdinalIgnoreCase));
-        foreach (var app in appsFoundToUpdate)
+        string strFormatID = $"{{0,-{appsFoundToUpdate.Max(found => found.strID.Length)}}} ";
+        string strFormatVersion = $"{{0,-{appsFoundToUpdate.Max(found => found.strVersion.Length)}}}";
+
+        appsFoundToUpdate.Sort((a, b) => string.Compare(a.strName, b.strName, StringComparison.OrdinalIgnoreCase));
+        for (int i = 0; i < appsFoundToUpdate.Count; i++)
         {
+            var app = appsFoundToUpdate[i];
             var (column, line) = Console.GetCursorPosition();
-            var diffType = Functions.VersionDiffType(app.Versao, app.Disponivel);
+            var diffType = Functions.VersionDiffType(app.strVersion, app.strNewVersion);
             bool isIgnored = false;
             switch (diffType)
             {
                 case Functions.VersionDiffTypeResult.Exception:
                     Functions.RevertLastWriteEx(column, line);
+                    app.intState = _STATE_ERROR;
                     continue;
                 case Functions.VersionDiffTypeResult.Major or Functions.VersionDiffTypeResult.Simple:
                     {
-                        isIgnored = appsToIgnore.Any(a => a.ID == app.ID && a.Versao == app.Versao && a.Disponivel == app.Disponivel);
+                        isIgnored = appsToIgnore.Any(a => a.strID == app.strID && a.strVersion == app.strVersion && a.strNewVersion == app.strNewVersion);
                         if (isIgnored)
                         {
                             Console.ForegroundColor = ConsoleColor.DarkGray;
+                            app.intState = _STATE_IGNORED;
                         }
                         else
                         {
                             Console.ForegroundColor = ConsoleColor.Green;
-                            appsAvailable.Add(app);
+                            app.intState = _STATE_AVAILABLE;
                         }
 
                         break;
@@ -276,33 +228,32 @@ public class Program
 
                 case Functions.VersionDiffTypeResult.Invalid:
                     Console.ForegroundColor = ConsoleColor.Red;
+                    app.intState = _STATE_ERROR;
                     break;
                 default:
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    appsAvailable.Add(app);
+                    app.intState = _STATE_AVAILABLE;
                     break;
             }
 
-            Console.Write(idFmt, app.ID);
-            //Console.Write(" ");
-            Console.Write(curVerFmt, app.Versao);
+            Console.Write(strFormatID, app.strID);
+            Console.Write(strFormatVersion, app.strVersion);
             Console.Write(" --> ");
-            int rightPadding = appsFoundToUpdate.Max(found => found.Disponivel.Length) - app.Disponivel.Length;
+            int rightPadding = appsFoundToUpdate.Max(found => found.strNewVersion.Length) - app.strNewVersion.Length;
             if (diffType is Functions.VersionDiffTypeResult.Exception or Functions.VersionDiffTypeResult.Invalid)
             {
-                Console.Write(app.Disponivel.PadRight(rightPadding));
+                Console.Write(app.strNewVersion.PadRight(rightPadding));
             }
             else
             {
-                Functions.PrintNewVersion(app.Versao, app.Disponivel, rightPadding, isIgnored);
+                Functions.PrintNewVersion(app.strVersion, app.strNewVersion, rightPadding, isIgnored);
             }
-            //Console.Write(avlbVerFmt, app.Disponivel);
             Console.ResetColor();
             switch (diffType)
             {
                 case Functions.VersionDiffTypeResult.Simple:
                     {
-                        Console.Write($" - disponível");
+                        Console.Write(" - disponível");
                         if (isIgnored)
                         {
                             Console.Write(" PORÉM ignorado...");
@@ -332,53 +283,36 @@ public class Program
             }
             Console.WriteLine();
         }
-        appsFoundToUpdate.Shrink();
+
+        appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_AVAILABLE);
 
         Console.ResetColor();
         Console.WriteLine();
         Console.WriteLine();
 
-        List<string> appsToUpdate = [];
-        var countNewIgnores = 0;
-        foreach (var app in appsAvailable)
+        for (int i = 0; i < appsFoundToUpdate.Count; i++)
         {
+            var app = appsFoundToUpdate[i];
             var (column, line) = Console.GetCursorPosition();
-            Console.Write($"Atualizar {app.Nome}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
+            Console.Write($"Atualizar {app.strName}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
 
             var key = Console.ReadKey(true);
             Console.WriteLine();
             Functions.RevertLastWrite(column, line);
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
-                Console.WriteLine($"{app.Nome}({app.ID}) adicionado");
-                appsToUpdate.Add(app.ID);
+                Console.WriteLine($"{app.strName}({app.strID}) adicionado");
+                app.intState = _STATE_SELECTED;
             }
             else if (key.Key is ConsoleKey.I or ConsoleKey.G)
             {
                 appsToIgnore.Add(app);
-                countNewIgnores++;
+                await SaveAppsIgnoredAsync(appsToIgnore, ct).ConfigureAwait(false);
             }
         }
-        if (countNewIgnores > 0)
-        {
-            await SaveAppsIgnoredAsync(appsToIgnore, ct).ConfigureAwait(false);
-        }
-        appsToIgnore.Shrink();
 
-        if (appsToUpdate.Count == 0)
-        {
-            await Functions.WaitEnterKeyUpTo(1000, "Nenhum update para realizar...");
-            return false;
-        }
-        int iUpdates = await ProcessUpdatesAsync(appsToUpdate, ct).ConfigureAwait(false);
-        if (iUpdates == 0)
-        {
-            await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi realizado");
-            return false;
-        }
-        await Functions.WaitEnterKeyUpTo(4000, $"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
-        return true;
-
+        appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_SELECTED);
+        return appsFoundToUpdate;
     }
 
     private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
@@ -395,7 +329,7 @@ public class Program
 
             if (partCount == 0)
             {
-                appToAdd.ID = spanSplit.Source[appPart].ToString();
+                appToAdd.strID = spanSplit.Source[appPart].ToString();
                 partCount++;
                 continue;
             }
@@ -405,11 +339,11 @@ public class Program
                 // so need to join
                 if (spanSplit.Source[appPart].Contains('<'))
                 {
-                    appToAdd.Versao = $"{spanSplit.Source[appPart]} ";
+                    appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
                 }
                 else
                 {
-                    appToAdd.Versao += $"{spanSplit.Source[appPart]}";
+                    appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
                     partCount++;
                 }
 
@@ -417,7 +351,7 @@ public class Program
             }
             if (partCount >= 2)
             {
-                appToAdd.Disponivel = spanSplit.Source[appPart].ToString();
+                appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
                 break;
             }
         }
@@ -425,56 +359,63 @@ public class Program
         return appToAdd;
     }
 
-    private static async Task<int> ProcessUpdatesAsync(List<string> appsToUpdate, CancellationToken ct = default)
+    private static async Task<int> ProcessUpdatesAsync(Config config, List<App> appsToUpdate, CancellationToken ct = default)
     {
         if (!appsToUpdate.AnySafe())
         {
             return 0;
         }
         int iUpdates = 0;
-        var strBuilder = new StringBuilder();
-        foreach (string appID in appsToUpdate)
+        var sbResponseUpd = new StringBuilder();
+        foreach (var app in appsToUpdate)
         {
-            strBuilder.Clear();
-            strBuilder.Append("Output do update de ");
-            strBuilder.AppendLine(appID);
+            sbResponseUpd.Clear();
+            sbResponseUpd.Append("Output do update de ");
+            sbResponseUpd.AppendLine(app.strID);
             var ctsLoader = new CancellationTokenSource();
             try
             {
                 Console.WriteLine();
                 Console.Write("Atualizando ");
-                Console.Write(appID);
+                Console.Write(app.strID);
                 Console.Write(" ");
 
-                switch (_LoaderType)
+                try
                 {
-                    case 1:
-                        _ = Loader.Wait_Old(ctsLoader!.Token);
-                        break;
-                    case 2:
-                        _ = Loader.Wait(_LoaderSymbols!, ctsLoader!.Token);
-                        break;
+                    _ = Loader.Wait(config.LoaderSymbols, ctsLoader!.Token);
+                    await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update, app.strID, "--silent"], false)
+                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => sbResponseUpd.AppendLine(str)))
+                        .ExecuteAsync(ct).ConfigureAwait(false);
                 }
-                await Cli.Wrap(STR_Winget).WithArguments([STR_Update, appID, "--silent"])
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => strBuilder.AppendLine(str)))
-                    .ExecuteAsync(ct).ConfigureAwait(false);
-                Loader.Stop(ctsLoader);
+                finally
+                {
+                    Loader.Stop(ctsLoader);
+                }
+                //switch (_LoaderType)
+                //{
+                //    case 1:
+                //        _ = Loader.Wait_Old(ctsLoader!.Token);
+                //        break;
+                //    case 2:
+                //        _ = Loader.Wait(_LoaderSymbols!, ctsLoader!.Token);
+                //        break;
+                //}
 
                 Console.WriteLine();
-                Console.Write(appID);
+                Console.Write(app.strID);
                 Console.WriteLine(" atualizado");
                 iUpdates++;
             }
             catch (Exception ex)
             {
-                Loader.Stop(ctsLoader);
+                //Loader.Stop(ctsLoader);
 
-                strBuilder.AppendLine();
-                strBuilder.AppendLine(ex.ToString());
-                strBuilder.AppendToTimestampFile(_strPath, $"{_UPD_EXCEPTION_FILE}_{appID}");
+                sbResponseUpd.AppendLine();
+                sbResponseUpd.AppendLine(ex.ToString());
+                sbResponseUpd.AppendToTimestampFile(_strPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
 
 
-                await Functions.WaitEnterKeyUpTo(30000, $"{Environment.NewLine}{appID} EXCEPTION: {ex.Message}{Environment.NewLine}Check output log for more information");
+                await Functions.WaitEnterKeyUpTo(30000, $"{Environment.NewLine}{app.strID} EXCEPTION: {ex.Message}{Environment.NewLine}Check output log for more information");
             }
         }
 
@@ -565,6 +506,68 @@ public class Program
             }
         }
         return appsToIgnore;
+    }
+
+    private static bool TextToApp(string text, ref List<App> apps)
+    {
+        if (text.IsEmpty() || apps is null)
+        {
+            return false;
+        }
+        // Scan lines until starts with "Nome" and contains "ID"
+        var lines = text.Split(Environment.NewLine);
+        int startLineIndex = Array.FindIndex(lines, line => line.StartsWith("Nome") && line.Contains("ID"));
+        if (startLineIndex == -1)
+        {
+            return false;
+        }
+        int indexID = lines[startLineIndex].IndexOf("ID");
+        int IDSize = lines[startLineIndex].IndexOf("Vers") - indexID;
+
+
+
+        for (int i = startLineIndex + 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains(STR_Winget); i++)
+        {
+            //When a application name is too long and there is any problem with encoding, sometimes it shifts from ID one or two front or back
+            var spanLine = lines[i].AsSpan();
+            var spanName = spanLine[..(indexID - 1)].TrimEnd();
+            while (spanName.Length > 0 && !char.IsBetween(spanName[^1], '!', '~'))
+            {
+                spanName = spanName[..^1];
+            }
+            if (spanName.Length == 0)
+            {
+                return false;
+            }
+
+            int adjustedIndexID = indexID;
+            while (adjustedIndexID < lines[i].Length - 1 && !char.IsBetween(spanName[^1], '!', '~'))
+            {
+                adjustedIndexID++;
+            }
+            if (adjustedIndexID > indexID + 4)
+            {
+                Console.WriteLine($"Erro ao ler {spanName} ({lines[i]})");
+                continue;
+            }
+
+            var appToAdd = new App
+            {
+                strName = spanName.ToString(),
+                strID = "",
+                strVersion = "",
+                strNewVersion = ""
+            };
+
+            var spanFromId = spanLine[adjustedIndexID..];
+
+            appToAdd = ReadAppIdAndVersions(appToAdd, spanFromId);
+
+            apps.Add(appToAdd);
+
+        }
+        return apps.Count > 0;
+
     }
 }
 
