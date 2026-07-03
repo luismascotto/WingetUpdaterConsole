@@ -1,9 +1,11 @@
-﻿using CliWrap;
-using Microsoft.Extensions.Configuration;
-using System.Buffers;
+﻿using System.Buffers;
+using System.Collections;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CliWrap;
+using Microsoft.Extensions.Configuration;
 
 namespace Consoler;
 
@@ -36,9 +38,10 @@ public class Program
     private const string _UPD_EXCEPTION_FILE = "update";
     private const string _OUTPUT_FILE = "winget_output";
 
-    private const int _STATE_SELECTED = 1;
-    private const int _STATE_IGNORED = 2;
-    private const int _STATE_ERROR = 3;
+    private const int _STATE_AVAILABLE = 1;
+    private const int _STATE_SELECTED = 2;
+    private const int _STATE_IGNORED = 3;
+    private const int _STATE_ERROR = 4;
 
 
     private const string _ignoredAppsFilename = "ignored.json";
@@ -48,7 +51,6 @@ public class Program
 
     private static readonly string _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}";
 
-    private static int _STATE_AVAILABLE;
     static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -155,7 +157,7 @@ public class Program
             await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
 
 
-            var appsToUpdate = await ProcessListAsync(config, ctsMain!.Token).ConfigureAwait(false);
+            var appsToUpdate = ProcessList(config, ctsMain!.Token);
             if (appsToUpdate.Count == 0)
             {
                 await Functions.WaitEnterKeyUpTo(1000, "Nenhum update para realizar...");
@@ -168,7 +170,7 @@ public class Program
                 return false;
             }
             await Functions.WaitEnterKeyUpTo(4000, $"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
-            return iUpdates < appsToUpdate.Count;
+            return iUpdates == appsToUpdate.Count;
         }
         catch (Exception ex)
         {
@@ -180,47 +182,56 @@ public class Program
         return false;
     }
 
-    private static async Task<List<App>> ProcessListAsync(Config config, CancellationToken ct = default)
+    private static List<App> ProcessList(Config config, CancellationToken ct = default)
     {
         List<App> appsFoundToUpdate = [];
         TextToApp(config.sbResponse.ToString(), ref appsFoundToUpdate);
 
         if (appsFoundToUpdate.Count == 0)
         {
-            Console.WriteLine("Nenhum app encontrado para atualizar");
-            await Functions.WaitEnterKeyUpTo(2000);
             return appsFoundToUpdate;
         }
-        List<App> appsToIgnore = await LoadAppsIgnoredAsync(ct).ConfigureAwait(false);
+        List<App> appsToIgnore = LoadAppsIgnoredAsync(ct).Result;
 
         string strFormatID = $"{{0,-{appsFoundToUpdate.Max(found => found.strID.Length)}}} ";
         string strFormatVersion = $"{{0,-{appsFoundToUpdate.Max(found => found.strVersion.Length)}}}";
+        int column, line;
 
         appsFoundToUpdate.Sort((a, b) => string.Compare(a.strName, b.strName, StringComparison.OrdinalIgnoreCase));
-        for (int i = 0; i < appsFoundToUpdate.Count; i++)
+        Span<App> spanApps = CollectionsMarshal.AsSpan(appsFoundToUpdate);
+        for (int i = 0; i < spanApps.Length; i++)
         {
-            var app = appsFoundToUpdate[i];
-            var (column, line) = Console.GetCursorPosition();
-            var diffType = Functions.VersionDiffType(app.strVersion, app.strNewVersion);
+            (column, line) = Console.GetCursorPosition();
+            var diffType = Functions.VersionDiffType(spanApps[i].strVersion, spanApps[i].strNewVersion);
             bool isIgnored = false;
+            ref App item = ref spanApps[i];
+
             switch (diffType)
             {
                 case Functions.VersionDiffTypeResult.Exception:
                     Functions.RevertLastWriteEx(column, line);
-                    app.intState = _STATE_ERROR;
+                    item.intState = _STATE_ERROR;
                     continue;
                 case Functions.VersionDiffTypeResult.Major or Functions.VersionDiffTypeResult.Simple:
                     {
-                        isIgnored = appsToIgnore.Any(a => a.strID == app.strID && a.strVersion == app.strVersion && a.strNewVersion == app.strNewVersion);
+                        foreach (var app in appsToIgnore)
+                        {
+                            if (app.strID == spanApps[i].strID && app.strVersion == spanApps[i].strVersion && app.strNewVersion == spanApps[i].strNewVersion)
+                            {
+                                isIgnored = true;
+                                break;
+                            }
+                        }
+
                         if (isIgnored)
                         {
                             Console.ForegroundColor = ConsoleColor.DarkGray;
-                            app.intState = _STATE_IGNORED;
+                            item.intState = _STATE_IGNORED;
                         }
                         else
                         {
                             Console.ForegroundColor = ConsoleColor.Green;
-                            app.intState = _STATE_AVAILABLE;
+                            item.intState = _STATE_AVAILABLE;
                         }
 
                         break;
@@ -228,25 +239,25 @@ public class Program
 
                 case Functions.VersionDiffTypeResult.Invalid:
                     Console.ForegroundColor = ConsoleColor.Red;
-                    app.intState = _STATE_ERROR;
+                    item.intState = _STATE_ERROR;
                     break;
                 default:
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    app.intState = _STATE_AVAILABLE;
+                    item.intState = _STATE_AVAILABLE;
                     break;
             }
 
-            Console.Write(strFormatID, app.strID);
-            Console.Write(strFormatVersion, app.strVersion);
+            Console.Write(strFormatID, appsFoundToUpdate[i].strID);
+            Console.Write(strFormatVersion, appsFoundToUpdate[i].strVersion);
             Console.Write(" --> ");
-            int rightPadding = appsFoundToUpdate.Max(found => found.strNewVersion.Length) - app.strNewVersion.Length;
+            int rightPadding = appsFoundToUpdate.Max(found => found.strNewVersion.Length) - appsFoundToUpdate[i].strNewVersion.Length;
             if (diffType is Functions.VersionDiffTypeResult.Exception or Functions.VersionDiffTypeResult.Invalid)
             {
-                Console.Write(app.strNewVersion.PadRight(rightPadding));
+                Console.Write(appsFoundToUpdate[i].strNewVersion.PadRight(rightPadding));
             }
             else
             {
-                Functions.PrintNewVersion(app.strVersion, app.strNewVersion, rightPadding, isIgnored);
+                Functions.PrintNewVersion(appsFoundToUpdate[i].strVersion, appsFoundToUpdate[i].strNewVersion, rightPadding, isIgnored);
             }
             Console.ResetColor();
             switch (diffType)
@@ -287,76 +298,37 @@ public class Program
         appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_AVAILABLE);
 
         Console.ResetColor();
-        Console.WriteLine();
-        Console.WriteLine();
-
-        for (int i = 0; i < appsFoundToUpdate.Count; i++)
+        if (appsFoundToUpdate.Count == 0)
         {
-            var app = appsFoundToUpdate[i];
-            var (column, line) = Console.GetCursorPosition();
-            Console.Write($"Atualizar {app.strName}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
+            return appsFoundToUpdate;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine();
+        spanApps = CollectionsMarshal.AsSpan(appsFoundToUpdate);
+        for (int i = 0; i < spanApps.Length; i++)
+        {
+            (column, line) = Console.GetCursorPosition();
+            Console.Write($"Atualizar {spanApps[i].strName}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
 
             var key = Console.ReadKey(true);
             Console.WriteLine();
             Functions.RevertLastWrite(column, line);
             if (key.Key is ConsoleKey.Y or ConsoleKey.S)
             {
-                Console.WriteLine($"{app.strName}({app.strID}) adicionado");
-                app.intState = _STATE_SELECTED;
+                Console.WriteLine($"{spanApps[i].strName}({spanApps[i].strID}) adicionado");
+                ref App item = ref spanApps[i];
+                item.intState = _STATE_SELECTED;
             }
             else if (key.Key is ConsoleKey.I or ConsoleKey.G)
             {
-                appsToIgnore.Add(app);
-                await SaveAppsIgnoredAsync(appsToIgnore, ct).ConfigureAwait(false);
+                appsToIgnore.Add(spanApps[i]);
+                SaveAppsIgnoredAsync(appsToIgnore, ct).Wait();
             }
         }
 
         appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_SELECTED);
         return appsFoundToUpdate;
-    }
-
-    private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
-    {
-        var spanSplit = spanFromId.Split(' ');
-
-        int partCount = 0;
-        foreach (var appPart in spanSplit)
-        {
-            if (appPart.End.Value - appPart.Start.Value <= 0)
-            {
-                continue;
-            }
-
-            if (partCount == 0)
-            {
-                appToAdd.strID = spanSplit.Source[appPart].ToString();
-                partCount++;
-                continue;
-            }
-            if (partCount == 1)
-            {
-                //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C", 
-                // so need to join
-                if (spanSplit.Source[appPart].Contains('<'))
-                {
-                    appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
-                }
-                else
-                {
-                    appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
-                    partCount++;
-                }
-
-                continue;
-            }
-            if (partCount >= 2)
-            {
-                appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
-                break;
-            }
-        }
-
-        return appToAdd;
     }
 
     private static async Task<int> ProcessUpdatesAsync(Config config, List<App> appsToUpdate, CancellationToken ct = default)
@@ -391,15 +363,6 @@ public class Program
                 {
                     Loader.Stop(ctsLoader);
                 }
-                //switch (_LoaderType)
-                //{
-                //    case 1:
-                //        _ = Loader.Wait_Old(ctsLoader!.Token);
-                //        break;
-                //    case 2:
-                //        _ = Loader.Wait(_LoaderSymbols!, ctsLoader!.Token);
-                //        break;
-                //}
 
                 Console.WriteLine();
                 Console.Write(app.strID);
@@ -408,14 +371,17 @@ public class Program
             }
             catch (Exception ex)
             {
-                //Loader.Stop(ctsLoader);
+                Console.WriteLine();
+                Console.Write(app.strID);
+                Console.Write(" EXCEPTION: ");
+                Console.Write(ex.Message);
+                Console.WriteLine();
+                Console.Write("Check output log for more information");
 
                 sbResponseUpd.AppendLine();
                 sbResponseUpd.AppendLine(ex.ToString());
                 sbResponseUpd.AppendToTimestampFile(_strPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
 
-
-                await Functions.WaitEnterKeyUpTo(30000, $"{Environment.NewLine}{app.strID} EXCEPTION: {ex.Message}{Environment.NewLine}Check output log for more information");
             }
         }
 
@@ -506,6 +472,50 @@ public class Program
             }
         }
         return appsToIgnore;
+    }
+
+    private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
+    {
+        var spanSplit = spanFromId.Split(' ');
+
+        int partCount = 0;
+        foreach (var appPart in spanSplit)
+        {
+            if (appPart.End.Value - appPart.Start.Value <= 0)
+            {
+                continue;
+            }
+
+            if (partCount == 0)
+            {
+                appToAdd.strID = spanSplit.Source[appPart].ToString();
+                partCount++;
+                continue;
+            }
+            if (partCount == 1)
+            {
+                //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C", 
+                // so need to join
+                if (spanSplit.Source[appPart].Contains('<'))
+                {
+                    appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
+                }
+                else
+                {
+                    appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
+                    partCount++;
+                }
+
+                continue;
+            }
+            if (partCount >= 2)
+            {
+                appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
+                break;
+            }
+        }
+
+        return appToAdd;
     }
 
     private static bool TextToApp(string text, ref List<App> apps)
