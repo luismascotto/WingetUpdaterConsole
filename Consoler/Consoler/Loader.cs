@@ -195,7 +195,7 @@ public class Loader
 
     private static char GetLoaderChar()
     {
-        char loaderChar = LoaderChars![loaderPosition];
+        char loaderChar = LoaderChars[loaderPosition];
         SpinLoader(1);
         return loaderChar;
     }
@@ -206,7 +206,7 @@ public class Loader
         {
             return;
         }
-        count %= LoaderChars!.Length;
+        count %= LoaderChars.Length;
         if (backwards)
         {
             loaderPosition += (LoaderChars.Length - count);

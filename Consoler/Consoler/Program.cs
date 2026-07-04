@@ -11,13 +11,21 @@ namespace Consoler;
 
 public class Program
 {
+    public enum AppListState
+    {
+        Available,
+        Selected,
+        Ignored,
+        Error
+    }
+
     struct App
     {
         public string strName;
         public string strID;
         public string strVersion;
         public string strNewVersion;
-        public int intState;
+        public AppListState State;
     }
 
     struct Config
@@ -38,18 +46,12 @@ public class Program
     private const string _UPD_EXCEPTION_FILE = "update";
     private const string _OUTPUT_FILE = "winget_output";
 
-    private const int _STATE_AVAILABLE = 1;
-    private const int _STATE_SELECTED = 2;
-    private const int _STATE_IGNORED = 3;
-    private const int _STATE_ERROR = 4;
-
-
     private const string _ignoredAppsFilename = "ignored.json";
     const string STR_Winget = "winget";
     const string STR_Update = "upgrade";
     const string STR_FakeWinget = "FakeWinget";
 
-    private static readonly string _strPath = $"{Path.GetDirectoryName(Environment.ProcessPath)}";
+    private static readonly string _strLogPath = Path.Combine($"{Path.GetDirectoryName(Environment.ProcessPath)}", "Logs");
 
     static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -82,12 +84,15 @@ public class Program
             WingetCommand = STR_Winget
         };
 
-        if (config.ResponseFile.HasSomething() && !File.Exists(config.ResponseFile))
-        {
-            config.ResponseFile = Functions.GetResponseFilePath(config.ResponseFile);
 
+        Directory.CreateDirectory(_strLogPath);
+
+
+        if (config.ResponseFile.HasSomething())
+        {
             if (!File.Exists(config.ResponseFile))
             {
+
                 throw new FileNotFoundException($"Response file not found: {config.ResponseFile}");
             }
             config.WingetCommand = STR_FakeWinget;
@@ -96,15 +101,16 @@ public class Program
 
         Console.OutputEncoding = Encoding.UTF8;
         Console.CursorVisible = false;
+        Console.Title = "winget-upgrade";
+
         if (config.DebugLoader)
         {
-            Console.Title = "winget-upgrade-debug";
             Console.WriteLine($"\t\tWINGET (Debug Loader)");
 
             ProcessDebugLoader(config.LoaderType, config.LoaderSymbols);
             return;
         }
-        Console.Title = "winget-upgrade";
+
         uint safeGuard = 0;
         while (true)
         {
@@ -127,7 +133,7 @@ public class Program
             config.sbResponse.Clear();
             try
             {
-                _ = Loader.Wait(config.LoaderSymbols, ctsLoader!.Token);
+                _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
                 if (config.ResponseFile.HasSomething())
                 {
                     config.sbResponse.AppendLine(File.ReadAllText(config.ResponseFile));
@@ -135,7 +141,7 @@ public class Program
                 else
                 {
                     await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update], false)
-                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
+                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => FilterResponse(ref config.sbResponse, str)))
                         .WithValidation(CommandResultValidation.None)
                         .ExecuteAsync().ConfigureAwait(false);
                 }
@@ -147,34 +153,54 @@ public class Program
 
             if (config.sbResponse.Length == 0)
             {
-                await Functions.WaitEnterKeyUpTo(5000, "Sem resposta do winget");
+                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update retornado...");
                 return false;
             }
 
             Console.WriteLine();
             Console.WriteLine();
-            config.sbResponse.AppendToTimestampFile(_strPath, _OUTPUT_FILE);
+            config.sbResponse.AppendToTimestampFile(_strLogPath, _OUTPUT_FILE);
             await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
 
 
-            var appsToUpdate = ProcessList(config, ctsMain!.Token);
+            var appsToUpdate = ProcessList(config);
             if (appsToUpdate.Count == 0)
             {
-                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update para realizar...");
+                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update encontrado...");
                 return false;
             }
-            int iUpdates = await ProcessUpdatesAsync(config, appsToUpdate, ctsMain!.Token).ConfigureAwait(false);
-            if (iUpdates == 0)
+            int ignored = appsToUpdate.Count(app => app.State == AppListState.Ignored);
+            int available = appsToUpdate.Count(app => app.State == AppListState.Available);
+            int selected = appsToUpdate.Count(app => app.State == AppListState.Selected);
+
+            if (selected == 0)
             {
-                await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi realizado");
+                if(available == 0)
+                {
+                    foreach (var app in appsToUpdate)
+                    {
+                        if (app.State == AppListState.Ignored)
+                        {
+                            Console.WriteLine($"{app.strName}({app.strID}) - {app.strVersion} --> {app.strNewVersion}: {nameof(app.State)}");
+                        }
+                        if (app.State == AppListState.Error)
+                        {
+                            Console.WriteLine($"Erro ao analisar {app.strName}({app.strID}) - {app.strVersion} --> {app.strNewVersion}");
+                        }
+                    }
+                }
+                await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi disparado...");
                 return false;
             }
-            await Functions.WaitEnterKeyUpTo(4000, $"{iUpdates} atualizaç{(iUpdates == 1 ? "ão" : "ões")} realizada{(iUpdates == 1 ? "" : "s")}");
-            return iUpdates == appsToUpdate.Count;
+
+
+            int updated = await ProcessUpdatesAsync(config, appsToUpdate, ctsMain.Token).ConfigureAwait(false);
+            await Functions.WaitEnterKeyUpTo(4000, $"{updated}/{selected} Atualizações realizadas");
+            return updated > 0 && updated == selected;
         }
         catch (Exception ex)
         {
-            ex.AppendToTimestampFile(_strPath, _EXCEPTION_FILE);
+            ex.AppendToTimestampFile(_strLogPath, _EXCEPTION_FILE);
 
             ex.PrintAndWait("Erro ao atualizar...");
         }
@@ -182,7 +208,7 @@ public class Program
         return false;
     }
 
-    private static List<App> ProcessList(Config config, CancellationToken ct = default)
+    private static List<App> ProcessList(Config config)
     {
         List<App> appsFoundToUpdate = [];
         TextToApp(config.sbResponse.ToString(), ref appsFoundToUpdate);
@@ -191,7 +217,7 @@ public class Program
         {
             return appsFoundToUpdate;
         }
-        List<App> appsToIgnore = LoadAppsIgnoredAsync(ct).Result;
+        List<App> appsToIgnore = LoadAppsIgnoredAsync(CancellationToken.None).Result;
 
         string strFormatID = $"{{0,-{appsFoundToUpdate.Max(found => found.strID.Length)}}} ";
         string strFormatVersion = $"{{0,-{appsFoundToUpdate.Max(found => found.strVersion.Length)}}}";
@@ -210,7 +236,7 @@ public class Program
             {
                 case Functions.VersionDiffTypeResult.Exception:
                     Functions.RevertLastWriteEx(column, line);
-                    item.intState = _STATE_ERROR;
+                    item.State = AppListState.Error;
                     continue;
                 case Functions.VersionDiffTypeResult.Major or Functions.VersionDiffTypeResult.Simple:
                     {
@@ -226,12 +252,12 @@ public class Program
                         if (isIgnored)
                         {
                             Console.ForegroundColor = ConsoleColor.DarkGray;
-                            item.intState = _STATE_IGNORED;
+                            item.State = AppListState.Ignored;
                         }
                         else
                         {
                             Console.ForegroundColor = ConsoleColor.Green;
-                            item.intState = _STATE_AVAILABLE;
+                            item.State = AppListState.Available;
                         }
 
                         break;
@@ -239,11 +265,11 @@ public class Program
 
                 case Functions.VersionDiffTypeResult.Invalid:
                     Console.ForegroundColor = ConsoleColor.Red;
-                    item.intState = _STATE_ERROR;
+                    item.State = AppListState.Error;
                     break;
                 default:
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    item.intState = _STATE_AVAILABLE;
+                    item.State = AppListState.Available;
                     break;
             }
 
@@ -294,11 +320,12 @@ public class Program
             }
             Console.WriteLine();
         }
-
-        appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_AVAILABLE);
-
         Console.ResetColor();
-        if (appsFoundToUpdate.Count == 0)
+
+        int countAvailable = appsFoundToUpdate.Count(app => app.State == AppListState.Available);
+        //appsFoundToUpdate.RemoveAll(app => app.intState != AppListState.Available);
+
+        if (countAvailable == 0)
         {
             return appsFoundToUpdate;
         }
@@ -308,6 +335,10 @@ public class Program
         spanApps = CollectionsMarshal.AsSpan(appsFoundToUpdate);
         for (int i = 0; i < spanApps.Length; i++)
         {
+            if(spanApps[i].State != AppListState.Available)
+            {
+                continue;
+            }
             (column, line) = Console.GetCursorPosition();
             Console.Write($"Atualizar {spanApps[i].strName}? [Y]es/[S]im - [I]gnore/I[g]norar  No/Não[Any Other]: ");
 
@@ -318,16 +349,17 @@ public class Program
             {
                 Console.WriteLine($"{spanApps[i].strName}({spanApps[i].strID}) adicionado");
                 ref App item = ref spanApps[i];
-                item.intState = _STATE_SELECTED;
+                item.State = AppListState.Selected;
             }
             else if (key.Key is ConsoleKey.I or ConsoleKey.G)
             {
+                ref App item = ref spanApps[i];
+                item.State = AppListState.Ignored;
                 appsToIgnore.Add(spanApps[i]);
-                SaveAppsIgnoredAsync(appsToIgnore, ct).Wait();
+                SaveAppsIgnoredAsync(appsToIgnore, CancellationToken.None).Wait(CancellationToken.None);
             }
         }
 
-        appsFoundToUpdate.RemoveAll(app => app.intState != _STATE_SELECTED);
         return appsFoundToUpdate;
     }
 
@@ -354,7 +386,7 @@ public class Program
 
                 try
                 {
-                    _ = Loader.Wait(config.LoaderSymbols, ctsLoader!.Token);
+                    _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
                     await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update, app.strID, "--silent"], false)
                         .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => sbResponseUpd.AppendLine(str)))
                         .ExecuteAsync(ct).ConfigureAwait(false);
@@ -380,7 +412,7 @@ public class Program
 
                 sbResponseUpd.AppendLine();
                 sbResponseUpd.AppendLine(ex.ToString());
-                sbResponseUpd.AppendToTimestampFile(_strPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
+                sbResponseUpd.AppendToTimestampFile(_strLogPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
 
             }
         }
@@ -391,7 +423,7 @@ public class Program
     private static async Task LogsMaintenanceAsync(string outputFilePrefix)
     {
         //scan for old logs
-        var files = Directory.GetFiles(_strPath!, $"{outputFilePrefix}_*.txt");
+        var files = Directory.GetFiles(_strLogPath, $"{outputFilePrefix}_*.txt");
         if (files.Length > _QTY_LOGS)
         {
             //Sort files by Creation Date
@@ -425,10 +457,10 @@ public class Program
                 switch (loaderType)
                 {
                     case 1:
-                        _ = Loader.Wait_Old(ctsLoader!.Token);
+                        _ = Loader.Wait_Old(ctsLoader.Token);
                         break;
                     case 2:
-                        _ = Loader.Wait(loaderSymbols, ctsLoader!.Token);
+                        _ = Loader.Wait(loaderSymbols, ctsLoader.Token);
                         break;
                 }
                 Functions.WaitEnterKeyUpTo(600000).Wait();
@@ -526,7 +558,7 @@ public class Program
         }
         // Scan lines until starts with "Nome" and contains "ID"
         var lines = text.Split(Environment.NewLine);
-        int startLineIndex = Array.FindIndex(lines, line => line.StartsWith("Nome") && line.Contains("ID"));
+        int startLineIndex = Array.FindIndex(lines, ValidStartResponse);
         if (startLineIndex == -1)
         {
             return false;
@@ -557,7 +589,7 @@ public class Program
             }
             if (adjustedIndexID > indexID + 4)
             {
-                Console.WriteLine($"Erro ao ler {spanName} ({lines[i]})");
+                //Console.WriteLine($"Erro ao ler {spanName} ({lines[i]})");
                 continue;
             }
 
@@ -579,5 +611,20 @@ public class Program
         return apps.Count > 0;
 
     }
+
+    private static bool ValidStartResponse(string line)
+    {
+        return line.StartsWith("Nome") && line.Contains("ID");
+    }
+
+    private static void FilterResponse(ref StringBuilder sb, string line)
+    {
+        if (sb.Length > 0 || ValidStartResponse(line))
+        {
+            sb.AppendLine(line);
+        }
+    }
+
+
 }
 
