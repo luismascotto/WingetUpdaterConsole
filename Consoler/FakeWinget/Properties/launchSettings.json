@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FakeWinget": {
+      "commandName": "Project",
+      "commandLineArgs": "upgrade package --silent --waitMs 2000 --error"
+    }
+  }
+}
