@@ -1,8 +1,8 @@
-{
+﻿{
   "profiles": {
     "FakeWinget": {
       "commandName": "Project",
-      "commandLineArgs": "upgrade package --silent --waitMs 2000 --error"
+      "commandLineArgs": "upgrade package --silent --waitMs 2000 --error --response-file \"K:\\Develop\\Consoler\\Consoler\\publish\\Logs\\winget_output_2026-07-16_08DEE36E1872D833.txt\""
     }
   }
 }

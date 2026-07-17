@@ -1,49 +1,26 @@
-﻿using System.Text;
-
-namespace Consoler;
+﻿namespace Consoler;
 
 public class Functions
 {
-    static readonly string Spaces = "                                                                                                                                                                  ";
-
-    // public static string GetWindows1252fromUtf8(string utf8)
-    // {
-    //     var srcEncoding = Encoding.UTF8; // utf-8
-    //     var destEncoding = Encoding.Default;
-    //     //var destEncoding = Encoding.GetEncoding(Encoding.Latin1); // windows-1252
-
-    //     // convert the source bytes to the destination bytes
-    //     var destBytes = Encoding.Convert(srcEncoding, destEncoding, srcEncoding.GetBytes(utf8));
-    //     var destString = destEncoding.GetString(destBytes);
-
-    //     return destString;
-    // }
-    // public static string GetUTF8(string text)
-    // {
-    //     Encoding utf8 = Encoding.GetEncoding("UTF-8");
-    //     Encoding latin = Encoding.Latin1;
-
-    //     byte[] win1251Bytes = latin.GetBytes(text);
-    //     byte[] utf8Bytes = Encoding.Convert(latin, utf8, win1251Bytes);
-
-    //     return utf8.GetString(win1251Bytes);
-    // }
+    private static readonly string Spaces = "                                                                                                                                                                  ";
 
     public static void ClearCurrentConsoleLine(int extraLinesUp = 0)
     {
-        int currentLine = Console.CursorTop;
-        int desiredLine = Console.CursorTop - extraLinesUp;
-        if (desiredLine <= 0)
+        if (Console.CursorTop - extraLinesUp <= 0)
         {
             Console.Clear();
-            Console.SetCursorPosition(0, 0);
             return;
         }
+        var clearLineSpan = Spaces[^Console.WindowWidth..].AsSpan();
         do
         {
-            Console.SetCursorPosition(0, Console.CursorTop);
-            Console.Write(new string(' ', Console.WindowWidth));
-            Console.SetCursorPosition(0, --currentLine);
+            Console.CursorLeft = 0;
+            Console.Write(clearLineSpan);
+            Console.CursorLeft = 0;
+            if (extraLinesUp > 0 && Console.CursorTop > 0)
+            {
+                Console.CursorTop--;
+            }
         } while (extraLinesUp-- > 0);
     }
 
@@ -56,6 +33,8 @@ public class Functions
         Exception
     }
 
+    private static readonly char[] VersionSeparators = ['-', '.'];
+    private static ReadOnlySpan<char> Separators => VersionSeparators.AsSpan();
 
     public static VersionDiffTypeResult VersionDiffType(string actual, string updated)
     {
@@ -65,42 +44,39 @@ public class Functions
             {
                 return VersionDiffTypeResult.NotAnalysed; // Do not compare versions
             }
-
-            char separator = actual.Contains('-') ? '-' : '.';
-
-            var mySpan = actual.AsSpan().Split(separator);
-            var foundSpan = updated.AsSpan().Split(separator);
-
-
-            int myVer = -1;
-            int foundVer = -1;
+            var mySpan = actual.AsSpan().SplitAny(Separators);
+            var foundSpan = updated.AsSpan().SplitAny(Separators);
+            int comp;
             while (true)
             {
-                if (mySpan.MoveNext())
-                {
-                    myVer = mySpan.Source[mySpan.Current].ParseNatural();
-                }
-                if (foundSpan.MoveNext())
-                {
-                    foundVer = foundSpan.Source[foundSpan.Current].ParseNatural();
-                }
-                //Here if both are 0, we reached the end of both versions, they are invalid
-                if (myVer == -1 && foundVer == -1)
+                //Different lengths, foundVer part should be found greater before
+                if (!mySpan.MoveNext() || !foundSpan.MoveNext())
                 {
                     break;
                 }
-                //Here if both are equal, go to next part
-                if (myVer == foundVer)
+                // Same length, compare as string (some versions have letters, like 1.0.0-beta, or N-125365-g054dffd133-20260531)
+                if (mySpan.Source[mySpan.Current].Length == foundSpan.Source[foundSpan.Current].Length)
+                {
+                    comp = foundSpan.Source[foundSpan.Current].CompareTo(mySpan.Source[mySpan.Current], StringComparison.InvariantCultureIgnoreCase);
+                }
+                else
+                {
+                    // 3 is higher than 10 (3.3.5 vs 3.10.0) in string comparison, but lower in
+                    // natural comparison, so we need to parse as int and compare
+                    comp = foundSpan.Source[foundSpan.Current].ParseNatural() - mySpan.Source[mySpan.Current].ParseNatural();
+                }
+
+                if (comp == 0)
                 {
                     continue;
                 }
 
                 //We got a winner
-                if (foundVer > myVer)
+                if (comp > 0)
                 {
                     return foundSpan.Current.Start.Value == 0 ? VersionDiffTypeResult.Major : VersionDiffTypeResult.Simple;
                 }
-                //Here myVer > foundVer
+                //Here myVer part > foundVer or strange value
                 break;
             }
 
@@ -121,10 +97,10 @@ public class Functions
     {
         int iCompVersion = 0;
         char separator = actual.Contains('-') ? '-' : '.';
-    
+
         var currSemVer = actual.Split(separator);
         var nextSemVer = updated.Split(separator);
-   
+
         while (iCompVersion < nextSemVer.Length)
         {
             if (iCompVersion >= currSemVer.Length)
@@ -198,7 +174,7 @@ public class Functions
 
     public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds, string message = "")
     {
-        if(message.HasSomething())
+        if (message.HasSomething())
         {
             Console.WriteLine(message);
         }
@@ -215,6 +191,7 @@ public class Functions
      * Wait for a specific key press, or any key if ConsoleKey.None is provided
      * @param key The key to wait for
      */
+
     public static void PressAKey(ConsoleKey key = ConsoleKey.None)
     {
         do
@@ -275,5 +252,3 @@ public class Functions
         return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, responseFile);
     }
 }
-
-

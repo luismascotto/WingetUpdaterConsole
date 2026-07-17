@@ -2,11 +2,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>res\icon-for-update-11.ico</ApplicationIcon>
     <BaseOutputPath>..\OutputBin\</BaseOutputPath>
+    <StartupObject>Consoler.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>

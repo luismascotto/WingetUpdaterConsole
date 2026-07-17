@@ -1,6 +1,4 @@
-﻿using System.Buffers;
-using System.Collections;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -19,7 +17,7 @@ public class Program
         Error
     }
 
-    struct App
+    private struct App
     {
         public string strName;
         public string strID;
@@ -28,7 +26,7 @@ public class Program
         public AppListState State;
     }
 
-    struct Config
+    private struct Config
     {
         public string WingetCommand;
         public bool DebugLoader;
@@ -36,24 +34,24 @@ public class Program
         public string LoaderSymbols;
         public string ResponseFile;
         public StringBuilder sbResponse;
-
     }
 
     //private const int _DAYSTOKEEPLOGS = 14;
     private const int _QTY_LOGS = 50;
+
     private const int _QTY_RUNS = 5;
     private const string _EXCEPTION_FILE = "exception";
     private const string _UPD_EXCEPTION_FILE = "update";
     private const string _OUTPUT_FILE = "winget_output";
 
     private const string _ignoredAppsFilename = "ignored.json";
-    const string STR_Winget = "winget";
-    const string STR_Update = "upgrade";
-    const string STR_FakeWinget = "FakeWinget";
+    private const string STR_Winget = "winget";
+    private const string STR_Update = "upgrade";
+    private const string STR_FakeWinget = "FakeWinget";
 
     private static readonly string _strLogPath = Path.Combine($"{Path.GetDirectoryName(Environment.ProcessPath)}", "Logs");
 
-    static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -69,7 +67,6 @@ public class Program
                { "--response-file", "ResponseFile" },
            };
 
-
         IConfiguration configuration = new ConfigurationBuilder()
             .AddCommandLine(args, switchMappings)
             .Build();
@@ -84,21 +81,18 @@ public class Program
             WingetCommand = STR_Winget
         };
 
-
         Directory.CreateDirectory(_strLogPath);
-
 
         if (config.ResponseFile.HasSomething())
         {
             if (!File.Exists(config.ResponseFile))
             {
-
                 throw new FileNotFoundException($"Response file not found: {config.ResponseFile}");
             }
             config.WingetCommand = STR_FakeWinget;
-
         }
-
+        Console.WindowWidth = (int)(Console.LargestWindowWidth * 0.9);
+        Console.WindowHeight = (int)(Console.LargestWindowHeight * 0.9);
         Console.OutputEncoding = Encoding.UTF8;
         Console.CursorVisible = false;
         Console.Title = "winget-upgrade";
@@ -111,18 +105,18 @@ public class Program
             return;
         }
 
-        uint safeGuard = 0;
+        uint runs = 0;
         while (true)
         {
-            bool flowControl = await ExecuteUpgradeCheckAsync(config).ConfigureAwait(false);
-            if (!flowControl || ++safeGuard > _QTY_RUNS)
+            bool flowControl = await ExecuteUpgradeCheckAsync(config, runs).ConfigureAwait(false);
+            if (!flowControl || ++runs > _QTY_RUNS)
             {
                 return;
             }
         }
     }
 
-    private static async Task<bool> ExecuteUpgradeCheckAsync(Config config)
+    private static async Task<bool> ExecuteUpgradeCheckAsync(Config config, uint runs)
     {
         Console.Clear();
         Console.WriteLine("\t\tWINGET");
@@ -153,7 +147,10 @@ public class Program
 
             if (config.sbResponse.Length == 0)
             {
-                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update retornado...");
+                if (runs == 0)
+                {
+                    await Functions.WaitEnterKeyUpTo(1000, "Nenhum update retornado...");
+                }
                 return false;
             }
 
@@ -161,7 +158,6 @@ public class Program
             Console.WriteLine();
             config.sbResponse.AppendToTimestampFile(_strLogPath, _OUTPUT_FILE);
             await LogsMaintenanceAsync(_OUTPUT_FILE).ConfigureAwait(false);
-
 
             var appsToUpdate = ProcessList(config);
             if (appsToUpdate.Count == 0)
@@ -175,7 +171,7 @@ public class Program
 
             if (selected == 0)
             {
-                if(available == 0)
+                if (available == 0)
                 {
                     foreach (var app in appsToUpdate)
                     {
@@ -193,8 +189,7 @@ public class Program
                 return false;
             }
 
-
-            int updated = await ProcessUpdatesAsync(config, appsToUpdate, ctsMain.Token).ConfigureAwait(false);
+            int updated = await ProcessUpdatesAsync(config, appsToUpdate.Where(app => app.State == AppListState.Selected), ctsMain.Token).ConfigureAwait(false);
             await Functions.WaitEnterKeyUpTo(4000, $"{updated}/{selected} Atualizações realizadas");
             return updated > 0 && updated == selected;
         }
@@ -267,6 +262,7 @@ public class Program
                     Console.ForegroundColor = ConsoleColor.Red;
                     item.State = AppListState.Error;
                     break;
+
                 default:
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     item.State = AppListState.Available;
@@ -316,7 +312,6 @@ public class Program
                         Console.Write(" - Algo deu errado...");
                     }
                     break;
-
             }
             Console.WriteLine();
         }
@@ -335,7 +330,7 @@ public class Program
         spanApps = CollectionsMarshal.AsSpan(appsFoundToUpdate);
         for (int i = 0; i < spanApps.Length; i++)
         {
-            if(spanApps[i].State != AppListState.Available)
+            if (spanApps[i].State != AppListState.Available)
             {
                 continue;
             }
@@ -363,23 +358,24 @@ public class Program
         return appsFoundToUpdate;
     }
 
-    private static async Task<int> ProcessUpdatesAsync(Config config, List<App> appsToUpdate, CancellationToken ct = default)
+    private static async Task<int> ProcessUpdatesAsync(Config config, IEnumerable<App> appsToUpdate, CancellationToken ct = default)
     {
         if (!appsToUpdate.AnySafe())
         {
             return 0;
         }
         int iUpdates = 0;
-        var sbResponseUpd = new StringBuilder();
+        int column, line;
         foreach (var app in appsToUpdate)
         {
-            sbResponseUpd.Clear();
-            sbResponseUpd.Append("Output do update de ");
-            sbResponseUpd.AppendLine(app.strID);
+            config.sbResponse.Clear();
+            config.sbResponse.Append("Output do update de ");
+            config.sbResponse.AppendLine(app.strID);
             var ctsLoader = new CancellationTokenSource();
             try
             {
                 Console.WriteLine();
+                (column, line) = Console.GetCursorPosition();
                 Console.Write("Atualizando ");
                 Console.Write(app.strID);
                 Console.Write(" ");
@@ -388,7 +384,7 @@ public class Program
                 {
                     _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
                     await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update, app.strID, "--silent"], false)
-                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => sbResponseUpd.AppendLine(str)))
+                        .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
                         .ExecuteAsync(ct).ConfigureAwait(false);
                 }
                 finally
@@ -397,6 +393,7 @@ public class Program
                 }
 
                 Console.WriteLine();
+                Functions.RevertLastWrite(column, line);
                 Console.Write(app.strID);
                 Console.WriteLine(" atualizado");
                 iUpdates++;
@@ -410,10 +407,9 @@ public class Program
                 Console.WriteLine();
                 Console.Write("Check output log for more information");
 
-                sbResponseUpd.AppendLine();
-                sbResponseUpd.AppendLine(ex.ToString());
-                sbResponseUpd.AppendToTimestampFile(_strLogPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
-
+                config.sbResponse.AppendLine();
+                config.sbResponse.AppendLine(ex.ToString());
+                config.sbResponse.AppendToTimestampFile(_strLogPath, $"{_UPD_EXCEPTION_FILE}_{app.strID}");
             }
         }
 
@@ -459,6 +455,7 @@ public class Program
                     case 1:
                         _ = Loader.Wait_Old(ctsLoader.Token);
                         break;
+
                     case 2:
                         _ = Loader.Wait(loaderSymbols, ctsLoader.Token);
                         break;
@@ -526,7 +523,7 @@ public class Program
             }
             if (partCount == 1)
             {
-                //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C", 
+                //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C",
                 // so need to join
                 if (spanSplit.Source[appPart].Contains('<'))
                 {
@@ -566,8 +563,6 @@ public class Program
         int indexID = lines[startLineIndex].IndexOf("ID");
         int IDSize = lines[startLineIndex].IndexOf("Vers") - indexID;
 
-
-
         for (int i = startLineIndex + 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains(STR_Winget); i++)
         {
             //When a application name is too long and there is any problem with encoding, sometimes it shifts from ID one or two front or back
@@ -606,10 +601,8 @@ public class Program
             appToAdd = ReadAppIdAndVersions(appToAdd, spanFromId);
 
             apps.Add(appToAdd);
-
         }
         return apps.Count > 0;
-
     }
 
     private static bool ValidStartResponse(string line)
@@ -624,7 +617,4 @@ public class Program
             sb.AppendLine(line);
         }
     }
-
-
 }
-

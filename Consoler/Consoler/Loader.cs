@@ -1,7 +1,4 @@
-﻿using System.Diagnostics;
-using System.Text;
-
-namespace Consoler;
+﻿namespace Consoler;
 
 public class Loader
 {
@@ -58,7 +55,6 @@ public class Loader
         Array.Clear(loaderPositions, 0, loaderSlots);
         Console.ForegroundColor = LastForegroundColor;
         Console.BackgroundColor = LastBackgroundColor;
-
     }
 
     public static async Task Wait_Old(CancellationToken cancellationToken)
@@ -82,7 +78,6 @@ public class Loader
                     canCheckJackpot = true;
                 }
                 Console.SetCursorPosition(currCol + loaderSlot, Console.CursorTop);
-
             }
             acumulatedWaitMs += waitMs;
             if (countRandom > 0)
@@ -153,7 +148,6 @@ public class Loader
         Console.ResetColor();
     }
 
-
     private static bool CheckJackpot(char[] loaderPositions, int positions)
     {
         for (int j = 0; j < positions - 1; j++)
@@ -218,7 +212,6 @@ public class Loader
         loaderPosition %= LoaderChars.Length;
     }
 
-
     readonly private static int[] wait2Pattern = [300, 300, 200, 300, 100, 200, 100, 200];
     public static async Task Wait(string symbols, CancellationToken cancellationToken)
     {
@@ -237,7 +230,6 @@ public class Loader
 
             int currCol = Console.CursorLeft;
             int iWaitPattern = 0;
-
 
             while (true)
             {
@@ -293,5 +285,3 @@ public class Loader
         Thread.Sleep(50);
     }
 }
-
-

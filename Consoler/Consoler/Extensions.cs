@@ -8,6 +8,7 @@ public static class Extensions
     {
         return string.IsNullOrWhiteSpace(str);
     }
+
     public static bool HasSomething(this string? str)
     {
         return !IsEmpty(str);
@@ -21,6 +22,7 @@ public static class Extensions
             list.TrimExcess();
         }
     }
+
     public static bool AnySafe<T>(this List<T> list)
     {
         if (list != default)
@@ -29,6 +31,7 @@ public static class Extensions
         }
         return false;
     }
+
     public static int CountSafe<T>(this List<T> list)
     {
         if (list != default)
@@ -36,6 +39,15 @@ public static class Extensions
             return list.Count;
         }
         return 0;
+    }
+
+    public static bool AnySafe<T>(this IEnumerable<T> list)
+    {
+        if (list != default)
+        {
+            return list.Any();
+        }
+        return false;
     }
 
     public static string MyFileTimestamp(this DateTime dt)
@@ -58,7 +70,6 @@ public static class Extensions
         Functions.WriteLineWrapIndented(ex.StackTrace);
         Console.ResetColor();
         Console.WriteLine();
-
     }
 
     public static void PrintAndWait(this Exception ex, string message = "")
@@ -81,6 +92,7 @@ public static class Extensions
             Console.WriteLine($"Erro ao salvar exceção: {aex.Message}");
         }
     }
+
     public static void AppendToTimestampFile(this StringBuilder sb, string path, string nameSuffix)
     {
         try
@@ -126,6 +138,10 @@ public static class Extensions
         if (int.TryParse(str, out int result) && result >= 0)
         {
             return result;
+        }
+        if (str.Length == 1)
+        {
+            return str[0];
         }
         return defaultValue;
     }

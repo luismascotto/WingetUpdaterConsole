@@ -1,20 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace Consoler;
 
 internal class EncodingHelper
 {
-    // Function to detect the encoding for UTF-7, UTF-8/16/32 (bom, no bom, little
-    // & big endian), and local default codepage, and potentially other codepages.
-    // 'taster' = number of bytes to check of the file (to save processing). Higher
-    // value is slower, but more reliable (especially UTF-8 with special characters
-    // later on may appear to be ASCII initially). If taster = 0, then taster
-    // becomes the length of the file (for maximum reliability). 'text' is simply
-    // the string with the discovered encoding applied to the file.
+    // Function to detect the encoding for UTF-7, UTF-8/16/32 (bom, no bom, little & big endian),
+    // and local default codepage, and potentially other codepages. 'taster' = number of bytes to
+    // check of the file (to save processing). Higher value is slower, but more reliable (especially
+    // UTF-8 with special characters later on may appear to be ASCII initially). If taster = 0, then
+    // taster becomes the length of the file (for maximum reliability). 'text' is simply the string
+    // with the discovered encoding applied to the file.
     public Encoding DetectTextEncodingFromFile(string filename, out String text, int taster = 1000)
     {
         byte[] b = File.ReadAllBytes(filename);
@@ -25,7 +20,7 @@ internal class EncodingHelper
         {
             text = Encoding.GetEncoding("utf-32BE").GetString(b, 4, b.Length - 4);
             return Encoding.GetEncoding("utf-32BE");
-        }  // UTF-32, big-endian 
+        }  // UTF-32, big-endian
         else if (b.Length >= 4 && b[0] == 0xFF && b[1] == 0xFE && b[2] == 0x00 && b[3] == 0x00)
         {
             text = Encoding.UTF32.GetString(b, 4, b.Length - 4);
@@ -54,7 +49,6 @@ internal class EncodingHelper
 #pragma warning restore SYSLIB0001 // Type or member is obsolete
         } // UTF-7
 
-
         //////////// If the code reaches here, no BOM/signature was found, so now
         //////////// we need to 'taste' the file to see if can manually discover
         //////////// the encoding. A high taster value is desired for UTF-8
@@ -63,14 +57,13 @@ internal class EncodingHelper
             taster = b.Length;    // Taster size can't be bigger than the filesize obviously.
         }
 
-
-        // Some text files are encoded in UTF8, but have no BOM/signature. Hence
-        // the below manually checks for a UTF8 pattern. This code is based off
-        // the top answer at: https://stackoverflow.com/questions/6555015/check-for-invalid-utf8
-        // For our purposes, an unnecessarily strict (and terser/slower)
-        // implementation is shown at: https://stackoverflow.com/questions/1031645/how-to-detect-utf-8-in-plain-c
-        // For the below, false positives should be exceedingly rare (and would
-        // be either slightly malformed UTF-8 (which would suit our purposes
+        // Some text files are encoded in UTF8, but have no BOM/signature. Hence the below manually
+        // checks for a UTF8 pattern. This code is based off the top answer at:
+        // https://stackoverflow.com/questions/6555015/check-for-invalid-utf8 For our purposes, an
+        // unnecessarily strict (and terser/slower) implementation is shown at:
+        // https://stackoverflow.com/questions/1031645/how-to-detect-utf-8-in-plain-c For the below,
+        // false positives should be exceedingly rare (and would be either slightly malformed UTF-8
+        // (which would suit our purposes
         // anyway) or 8-bit extended ASCII/UTF-16/32 at a vanishingly long shot).
         int i = 0;
         bool utf8 = false;
@@ -108,10 +101,9 @@ internal class EncodingHelper
             return Encoding.UTF8;
         }
 
-
-        // The next check is a heuristic attempt to detect UTF-16 without a BOM.
-        // We simply look for zeroes in odd or even byte places, and if a certain
-        // threshold is reached, the code is 'probably' UF-16.          
+        // The next check is a heuristic attempt to detect UTF-16 without a BOM. We simply look for
+        // zeroes in odd or even byte places, and if a certain threshold is reached, the code is
+        // 'probably' UF-16.
         double threshold = 0.1; // proportion of chars step 2 which must be zeroed to be diagnosed as utf-16. 0.1 = 10%
         int count = 0;
         for (int n = 0; n < taster; n += 2)
@@ -142,9 +134,8 @@ internal class EncodingHelper
             return Encoding.Unicode;
         } // (little-endian)
 
-
-        // Finally, a long shot - let's see if we can find "charset=xyz" or
-        // "encoding=xyz" to identify the encoding:
+        // Finally, a long shot - let's see if we can find "charset=xyz" or "encoding=xyz" to
+        // identify the encoding:
         for (int n = 0; n < taster - 9; n++)
         {
             if (
@@ -186,10 +177,10 @@ internal class EncodingHelper
             }
         }
 
-
         // If all else fails, the encoding is probably (though certainly not
-        // definitely) the user's local codepage! One might present to the user a
-        // list of alternative encodings as shown here: https://stackoverflow.com/questions/8509339/what-is-the-most-common-encoding-of-each-language
+        // definitely) the user's local codepage! One might present to the user a list of
+        // alternative encodings as shown here:
+        // https://stackoverflow.com/questions/8509339/what-is-the-most-common-encoding-of-each-language
         // A full list can be found using Encoding.GetEncodings();
         text = Encoding.Default.GetString(b);
         return Encoding.Default;
