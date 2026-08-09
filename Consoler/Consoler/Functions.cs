@@ -93,7 +93,7 @@ public class Functions
         }
     }
 
-    public static void PrintNewVersion(string actual, string updated, int disponivelPad, bool isIgnored)
+    public static void PrintNewVersion(string actual, string updated, int disponivelPad)
     {
         int iCompVersion = 0;
         char separator = actual.Contains('-') ? '-' : '.';
@@ -109,7 +109,7 @@ public class Functions
             }
             else if (currSemVer[iCompVersion] != nextSemVer[iCompVersion])
             {
-                Console.ForegroundColor = isIgnored ? ConsoleColor.DarkYellow : ConsoleColor.Yellow;
+                Console.ForegroundColor = ConsoleColor.Yellow;
             }
             Console.Write(nextSemVer[iCompVersion]);
             iCompVersion++;

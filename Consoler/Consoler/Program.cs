@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CliWrap;
 using Microsoft.Extensions.Configuration;
+using static Consoler.Program;
 
 namespace Consoler;
 
@@ -17,7 +18,7 @@ public class Program
         Error
     }
 
-    private struct App
+    public struct App
     {
         public string strName;
         public string strID;
@@ -42,29 +43,24 @@ public class Program
     private const int _QTY_RUNS = 5;
     private const string _EXCEPTION_FILE = "exception";
     private const string _UPD_EXCEPTION_FILE = "update";
+    private const string _IGNORE_EXCEPTION_FILE = "ignore";
     private const string _OUTPUT_FILE = "winget_output";
 
-    private const string _ignoredAppsFilename = "ignored.json";
-    private const string STR_Winget = "winget";
-    private const string STR_Update = "upgrade";
-    private const string STR_FakeWinget = "FakeWinget";
+    private const string _STR_Winget = "winget";
+    private const string _STR_Update = "upgrade";
+    private const string _STR_Ignore = "pin add";
+    private const string _STR_FakeWinget = "FakeWinget";
 
     private static readonly string _strLogPath = Path.Combine($"{Path.GetDirectoryName(Environment.ProcessPath)}", "Logs");
-
-    private static readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
 
     private static async Task Main(string[] args)
     {
         var switchMappings = new Dictionary<string, string>()
            {
                { "--debug", "DebugLoader" },
-               { "--loader", "LoaderType" },
-               { "--symbols", "LoaderSymbols" },
-               { "--response-file", "ResponseFile" },
+               { "--dbg-loader-type", "LoaderType" },
+               { "--dbg-symbols", "LoaderSymbols" },
+               { "--dbg-response-file", "ResponseFile" },
            };
 
         IConfiguration configuration = new ConfigurationBuilder()
@@ -78,7 +74,7 @@ public class Program
             LoaderType = int.Parse(configuration["LoaderType"] ?? "1"),
             LoaderSymbols = configuration["LoaderSymbols"] ?? "",
             ResponseFile = configuration["ResponseFile"] ?? "",
-            WingetCommand = STR_Winget
+            WingetCommand = _STR_Winget
         };
 
         Directory.CreateDirectory(_strLogPath);
@@ -89,10 +85,10 @@ public class Program
             {
                 throw new FileNotFoundException($"Response file not found: {config.ResponseFile}");
             }
-            config.WingetCommand = STR_FakeWinget;
+            config.WingetCommand = _STR_FakeWinget;
         }
-        Console.WindowWidth = (int)(Console.LargestWindowWidth * 0.9);
-        Console.WindowHeight = (int)(Console.LargestWindowHeight * 0.9);
+        //Console.WindowWidth = (int)(Console.LargestWindowWidth * 0.9);
+        //Console.WindowHeight = (int)(Console.LargestWindowHeight * 0.9);
         Console.OutputEncoding = Encoding.UTF8;
         Console.CursorVisible = false;
         Console.Title = "winget-upgrade";
@@ -111,7 +107,7 @@ public class Program
             bool flowControl = await ExecuteUpgradeCheckAsync(config, runs).ConfigureAwait(false);
             if (!flowControl || ++runs > _QTY_RUNS)
             {
-                return;
+                break;
             }
         }
     }
@@ -134,7 +130,7 @@ public class Program
                 }
                 else
                 {
-                    await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update], false)
+                    await Cli.Wrap(config.WingetCommand).WithArguments([_STR_Update], false)
                         .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => FilterResponse(ref config.sbResponse, str)))
                         .WithValidation(CommandResultValidation.None)
                         .ExecuteAsync().ConfigureAwait(false);
@@ -165,7 +161,6 @@ public class Program
                 await Functions.WaitEnterKeyUpTo(1000, "Nenhum update encontrado...");
                 return false;
             }
-            int ignored = appsToUpdate.Count(app => app.State == AppListState.Ignored);
             int available = appsToUpdate.Count(app => app.State == AppListState.Available);
             int selected = appsToUpdate.Count(app => app.State == AppListState.Selected);
 
@@ -175,10 +170,6 @@ public class Program
                 {
                     foreach (var app in appsToUpdate)
                     {
-                        if (app.State == AppListState.Ignored)
-                        {
-                            Console.WriteLine($"{app.strName}({app.strID}) - {app.strVersion} --> {app.strNewVersion}: {nameof(app.State)}");
-                        }
                         if (app.State == AppListState.Error)
                         {
                             Console.WriteLine($"Erro ao analisar {app.strName}({app.strID}) - {app.strVersion} --> {app.strNewVersion}");
@@ -205,17 +196,16 @@ public class Program
 
     private static List<App> ProcessList(Config config)
     {
-        List<App> appsFoundToUpdate = [];
-        TextToApp(config.sbResponse.ToString(), ref appsFoundToUpdate);
+        List<App> appsFoundToUpdate = TextToAppList(config.sbResponse.ToString()) ?? [];
 
-        if (appsFoundToUpdate.Count == 0)
+        if (appsFoundToUpdate.CountSafe() == 0)
         {
             return appsFoundToUpdate;
         }
-        List<App> appsToIgnore = LoadAppsIgnoredAsync(CancellationToken.None).Result;
 
         string strFormatID = $"{{0,-{appsFoundToUpdate.Max(found => found.strID.Length)}}} ";
         string strFormatVersion = $"{{0,-{appsFoundToUpdate.Max(found => found.strVersion.Length)}}}";
+        int iMaxNewVersionLength = appsFoundToUpdate.Max(found => found.strNewVersion.Length);
         int column, line;
 
         appsFoundToUpdate.Sort((a, b) => string.Compare(a.strName, b.strName, StringComparison.OrdinalIgnoreCase));
@@ -224,7 +214,6 @@ public class Program
         {
             (column, line) = Console.GetCursorPosition();
             var diffType = Functions.VersionDiffType(spanApps[i].strVersion, spanApps[i].strNewVersion);
-            bool isIgnored = false;
             ref App item = ref spanApps[i];
 
             switch (diffType)
@@ -233,28 +222,11 @@ public class Program
                     Functions.RevertLastWriteEx(column, line);
                     item.State = AppListState.Error;
                     continue;
+
                 case Functions.VersionDiffTypeResult.Major or Functions.VersionDiffTypeResult.Simple:
                     {
-                        foreach (var app in appsToIgnore)
-                        {
-                            if (app.strID == spanApps[i].strID && app.strVersion == spanApps[i].strVersion && app.strNewVersion == spanApps[i].strNewVersion)
-                            {
-                                isIgnored = true;
-                                break;
-                            }
-                        }
-
-                        if (isIgnored)
-                        {
-                            Console.ForegroundColor = ConsoleColor.DarkGray;
-                            item.State = AppListState.Ignored;
-                        }
-                        else
-                        {
-                            Console.ForegroundColor = ConsoleColor.Green;
-                            item.State = AppListState.Available;
-                        }
-
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        item.State = AppListState.Available;
                         break;
                     }
 
@@ -272,45 +244,33 @@ public class Program
             Console.Write(strFormatID, appsFoundToUpdate[i].strID);
             Console.Write(strFormatVersion, appsFoundToUpdate[i].strVersion);
             Console.Write(" --> ");
-            int rightPadding = appsFoundToUpdate.Max(found => found.strNewVersion.Length) - appsFoundToUpdate[i].strNewVersion.Length;
+            int rightPadding = iMaxNewVersionLength - appsFoundToUpdate[i].strNewVersion.Length;
             if (diffType is Functions.VersionDiffTypeResult.Exception or Functions.VersionDiffTypeResult.Invalid)
             {
                 Console.Write(appsFoundToUpdate[i].strNewVersion.PadRight(rightPadding));
             }
             else
             {
-                Functions.PrintNewVersion(appsFoundToUpdate[i].strVersion, appsFoundToUpdate[i].strNewVersion, rightPadding, isIgnored);
+                Functions.PrintNewVersion(appsFoundToUpdate[i].strVersion, appsFoundToUpdate[i].strNewVersion, rightPadding);
             }
             Console.ResetColor();
             switch (diffType)
             {
                 case Functions.VersionDiffTypeResult.Simple:
-                    {
-                        Console.Write(" - disponível");
-                        if (isIgnored)
-                        {
-                            Console.Write(" PORÉM ignorado...");
-                        }
-                    }
+                    Console.Write(" - disponível");
                     break;
 
                 case Functions.VersionDiffTypeResult.Major:
-                    {
-                        Console.Write(" - Atenção*");
-                    }
+                    Console.Write(" - Atenção*");
                     break;
 
                 case Functions.VersionDiffTypeResult.NotAnalysed:
-                    {
-                        Console.Write(" - Por sua conta e Risco...");
-                    }
+                    Console.Write(" - Por sua conta e Risco...");
                     break;
 
                 default:
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.Write(" - Algo deu errado...");
-                    }
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.Write(" - Algo deu errado...");
                     break;
             }
             Console.WriteLine();
@@ -318,7 +278,6 @@ public class Program
         Console.ResetColor();
 
         int countAvailable = appsFoundToUpdate.Count(app => app.State == AppListState.Available);
-        //appsFoundToUpdate.RemoveAll(app => app.intState != AppListState.Available);
 
         if (countAvailable == 0)
         {
@@ -350,8 +309,7 @@ public class Program
             {
                 ref App item = ref spanApps[i];
                 item.State = AppListState.Ignored;
-                appsToIgnore.Add(spanApps[i]);
-                SaveAppsIgnoredAsync(appsToIgnore, CancellationToken.None).Wait(CancellationToken.None);
+                ProcessAppIgnoreAsync(config, spanApps[i], CancellationToken.None).Wait();
             }
         }
 
@@ -383,7 +341,7 @@ public class Program
                 try
                 {
                     _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
-                    await Cli.Wrap(config.WingetCommand).WithArguments([STR_Update, app.strID, "--silent"], false)
+                    await Cli.Wrap(config.WingetCommand).WithArguments([_STR_Update, app.strID, "--silent"], false)
                         .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
                         .ExecuteAsync(ct).ConfigureAwait(false);
                 }
@@ -403,9 +361,8 @@ public class Program
                 Console.WriteLine();
                 Console.Write(app.strID);
                 Console.Write(" EXCEPTION: ");
-                Console.Write(ex.Message);
-                Console.WriteLine();
-                Console.Write("Check output log for more information");
+                Console.WriteLine(ex.Message);
+                Console.WriteLine("Check output log for more information");
 
                 config.sbResponse.AppendLine();
                 config.sbResponse.AppendLine(ex.ToString());
@@ -473,36 +430,6 @@ public class Program
         }
     }
 
-    private static async Task SaveAppsIgnoredAsync(List<App> apps, CancellationToken ct = default)
-    {
-        try
-        {
-            await File.WriteAllTextAsync(_ignoredAppsFilename, JsonSerializer.Serialize(apps, jsonSerializerOptions), ct);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Erro ao salvar apps ignorados: {ex.Message}");
-        }
-    }
-
-    private static async Task<List<App>> LoadAppsIgnoredAsync(CancellationToken ct = default)
-    {
-        List<App> appsToIgnore = [];
-        if (File.Exists(_ignoredAppsFilename))
-        {
-            try
-            {
-                var json = await File.ReadAllTextAsync(_ignoredAppsFilename, ct).ConfigureAwait(false);
-                appsToIgnore = JsonSerializer.Deserialize<List<App>>(json, jsonSerializerOptions) ?? [];
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Erro ao carregar apps ignorados: {ex.Message}");
-            }
-        }
-        return appsToIgnore;
-    }
-
     private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
     {
         var spanSplit = spanFromId.Split(' ');
@@ -547,26 +474,42 @@ public class Program
         return appToAdd;
     }
 
-    private static bool TextToApp(string text, ref List<App> apps)
+    private static List<App>? TextToAppList(string text)
     {
-        if (text.IsEmpty() || apps is null)
+        if (text.IsEmpty())
         {
-            return false;
+            return null;
         }
-        // Scan lines until starts with "Nome" and contains "ID"
-        var lines = text.Split(Environment.NewLine);
-        int startLineIndex = Array.FindIndex(lines, ValidStartResponse);
-        if (startLineIndex == -1)
-        {
-            return false;
-        }
-        int indexID = lines[startLineIndex].IndexOf("ID");
-        int IDSize = lines[startLineIndex].IndexOf("Vers") - indexID;
+        bool bValid = false;
 
-        for (int i = startLineIndex + 2; i < lines.Length && lines[i]?.Length >= indexID + IDSize && lines[i].Contains(STR_Winget); i++)
+        var linesSpan = text.AsSpan().Split(Environment.NewLine);
+        // Scan lines until starts with "Nome" and contains "ID"
+        while(linesSpan.MoveNext())
         {
+            if (ValidStartResponse(linesSpan.Source[linesSpan.Current]))
+            {
+                bValid = true;
+                break;
+            }
+        }
+        if(!bValid)
+        {
+            return null;
+        }
+        int indexID = linesSpan.Source[linesSpan.Current].IndexOf("ID");
+        int IDSize = linesSpan.Source[linesSpan.Current].IndexOf("Vers") - indexID;
+        // ---- Separator line
+        linesSpan.MoveNext();
+
+        List<App> apps = [];
+        while (linesSpan.MoveNext())
+        {
+            var spanLine = linesSpan.Source[linesSpan.Current];
+            if (spanLine.Length < indexID + IDSize || !spanLine.Contains(_STR_Winget, StringComparison.InvariantCulture))
+            {
+                break;
+            }
             //When a application name is too long and there is any problem with encoding, sometimes it shifts from ID one or two front or back
-            var spanLine = lines[i].AsSpan();
             var spanName = spanLine[..(indexID - 1)].TrimEnd();
             while (spanName.Length > 0 && !char.IsBetween(spanName[^1], '!', '~'))
             {
@@ -574,11 +517,11 @@ public class Program
             }
             if (spanName.Length == 0)
             {
-                return false;
+                break;
             }
 
             int adjustedIndexID = indexID;
-            while (adjustedIndexID < lines[i].Length - 1 && !char.IsBetween(spanName[^1], '!', '~'))
+            while (adjustedIndexID < spanLine.Length - 1 && !char.IsBetween(spanName[^1], '!', '~'))
             {
                 adjustedIndexID++;
             }
@@ -602,12 +545,13 @@ public class Program
 
             apps.Add(appToAdd);
         }
-        return apps.Count > 0;
+
+        return apps;
     }
 
-    private static bool ValidStartResponse(string line)
+    private static bool ValidStartResponse(ReadOnlySpan<char> line)
     {
-        return line.StartsWith("Nome") && line.Contains("ID");
+        return line.StartsWith("Nome") && line.Contains("ID", StringComparison.InvariantCulture);
     }
 
     private static void FilterResponse(ref StringBuilder sb, string line)
@@ -616,5 +560,49 @@ public class Program
         {
             sb.AppendLine(line);
         }
+    }
+
+    private static async Task<bool> ProcessAppIgnoreAsync(Config config, App appToIgnore, CancellationToken ct = default)
+    {
+        try
+        {
+            var ctsLoader = new CancellationTokenSource();
+            Console.WriteLine();
+            var (column, line) = Console.GetCursorPosition();
+            Console.Write("Ignorando ");
+            Console.Write(appToIgnore.strID);
+            Console.Write(" ");
+
+            try
+            {
+                _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
+                await Cli.Wrap(config.WingetCommand).WithArguments([_STR_Ignore, "--id",appToIgnore.strID, "--blocking"], false)
+                    .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
+                    .ExecuteAsync(ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                Loader.Stop(ctsLoader);
+            }
+
+            Console.WriteLine();
+            Functions.RevertLastWrite(column, line);
+            Console.Write(appToIgnore.strID);
+            Console.WriteLine(" ignorado");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.Write(appToIgnore.strID);
+            Console.Write(" EXCEPTION: ");
+            Console.WriteLine(ex.Message);
+            Console.WriteLine("Check output log for more information");
+
+            config.sbResponse.AppendLine();
+            config.sbResponse.AppendLine(ex.ToString());
+            config.sbResponse.AppendToTimestampFile(_strLogPath, $"{_IGNORE_EXCEPTION_FILE}_{appToIgnore.strID}");
+        }
+
+        return true;
     }
 }
