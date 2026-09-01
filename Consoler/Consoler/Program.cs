@@ -432,44 +432,59 @@ public class Program
 
     private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
     {
-        var spanSplit = spanFromId.Split(' ');
+        //New strategy: Since new formats are being created, Cut at the first space for appID
+        // trimStart and trimEnd before 'winget'  the remaining span, then split in the half, then trim both both end
+        // "Example.App   1.2.3 (12345)    1.2.4 (12444)      winget"
+        // 1 - Example.App
+        // 2 - "1.2.3 (12345)    1.2.4 (12444)"
+        // 3 - "1.2.3 (12345)  " / "  1.2.4 (12444)"
+        // 4 - "1.2.3 (12345)" / "1.2.4 (12444)"
 
-        int partCount = 0;
-        foreach (var appPart in spanSplit)
-        {
-            if (appPart.End.Value - appPart.Start.Value <= 0)
-            {
-                continue;
-            }
 
-            if (partCount == 0)
-            {
-                appToAdd.strID = spanSplit.Source[appPart].ToString();
-                partCount++;
-                continue;
-            }
-            if (partCount == 1)
-            {
-                //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C",
-                // so need to join
-                if (spanSplit.Source[appPart].Contains('<'))
-                {
-                    appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
-                }
-                else
-                {
-                    appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
-                    partCount++;
-                }
+        appToAdd.strID = spanFromId[..spanFromId.IndexOf(' ')].ToString();
 
-                continue;
-            }
-            if (partCount >= 2)
-            {
-                appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
-                break;
-            }
-        }
+        spanFromId = spanFromId[(spanFromId.IndexOf(' ') + 1)..spanFromId.IndexOf("winget")].TrimStart().TrimEnd();
+        appToAdd.strVersion = spanFromId[..(spanFromId.Length / 2)].TrimEnd().ToString();
+        appToAdd.strNewVersion = spanFromId[(spanFromId.Length / 2)..].TrimStart().ToString();
+
+        //var spanSplit = spanFromId.Split(' ');
+
+        //int partCount = 0;
+        //foreach (var appPart in spanSplit)
+        //{
+        //    if (appPart.End.Value - appPart.Start.Value <= 0)
+        //    {
+        //        continue;
+        //    }
+
+        //    if (partCount == 0)
+        //    {
+        //        appToAdd.strID = spanSplit.Source[appPart].ToString();
+        //        partCount++;
+        //        continue;
+        //    }
+        //    if (partCount == 1)
+        //    {
+        //        //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C",
+        //        // so need to join
+        //        if (spanSplit.Source[appPart].Contains('<'))
+        //        {
+        //            appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
+        //        }
+        //        else
+        //        {
+        //            appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
+        //            partCount++;
+        //        }
+
+        //        continue;
+        //    }
+        //    if (partCount >= 2)
+        //    {
+        //        appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
+        //        break;
+        //    }
+        //}
 
         return appToAdd;
     }
