@@ -435,56 +435,48 @@ public class Program
         //New strategy: Since new formats are being created, Cut at the first space for appID
         // trimStart and trimEnd before 'winget'  the remaining span, then split in the half, then trim both both end
         // "Example.App   1.2.3 (12345)    1.2.4 (12444)      winget"
+        // "Example.App   1.2.3 (12345)    1.2.4 (12444)"
         // 1 - Example.App
         // 2 - "1.2.3 (12345)    1.2.4 (12444)"
         // 3 - "1.2.3 (12345)  " / "  1.2.4 (12444)"
         // 4 - "1.2.3 (12345)" / "1.2.4 (12444)"
 
+        if (spanFromId.Length == 0)
+        {
+            return appToAdd;
+        }
 
-        appToAdd.strID = spanFromId[..spanFromId.IndexOf(' ')].ToString();
+        //Cut end
+        int index = spanFromId.IndexOf("winget");
+        if (index < 0)
+        {
+            index = spanFromId.Length;
+        }
+        spanFromId = spanFromId[..index].TrimEnd();
 
-        spanFromId = spanFromId[(spanFromId.IndexOf(' ') + 1)..spanFromId.IndexOf("winget")].TrimStart().TrimEnd();
-        appToAdd.strVersion = spanFromId[..(spanFromId.Length / 2)].TrimEnd().ToString();
-        appToAdd.strNewVersion = spanFromId[(spanFromId.Length / 2)..].TrimStart().ToString();
 
-        //var spanSplit = spanFromId.Split(' ');
+        index = spanFromId.IndexOf(' ');
+        if (index < 0)
+        {
+            return appToAdd;
+        }
 
-        //int partCount = 0;
-        //foreach (var appPart in spanSplit)
-        //{
-        //    if (appPart.End.Value - appPart.Start.Value <= 0)
-        //    {
-        //        continue;
-        //    }
 
-        //    if (partCount == 0)
-        //    {
-        //        appToAdd.strID = spanSplit.Source[appPart].ToString();
-        //        partCount++;
-        //        continue;
-        //    }
-        //    if (partCount == 1)
-        //    {
-        //        //Winget sometimes returns the current version with a "< A.B.C" and Available "A.B.C",
-        //        // so need to join
-        //        if (spanSplit.Source[appPart].Contains('<'))
-        //        {
-        //            appToAdd.strVersion = $"{spanSplit.Source[appPart]} ";
-        //        }
-        //        else
-        //        {
-        //            appToAdd.strVersion += $"{spanSplit.Source[appPart]}";
-        //            partCount++;
-        //        }
+        appToAdd.strID = spanFromId[..index].ToString();
 
-        //        continue;
-        //    }
-        //    if (partCount >= 2)
-        //    {
-        //        appToAdd.strNewVersion = spanSplit.Source[appPart].ToString();
-        //        break;
-        //    }
-        //}
+        spanFromId = spanFromId[(index + 1)..].TrimStart();
+        int iLenHalved = (spanFromId.Length - 1) / 2;
+        if ((spanFromId.Length - 1) % 2 == 0)
+        {
+            iLenHalved--;
+        }
+        //Should be ' ', but can be any separator, so unless the character is a letter or digit, we will consider it a separator and split the string in half
+        if (char.IsAsciiLetterOrDigit(spanFromId[iLenHalved]))
+        {
+            return appToAdd;
+        }
+        appToAdd.strVersion = spanFromId[..iLenHalved].TrimEnd().ToString();
+        appToAdd.strNewVersion = spanFromId[iLenHalved..].TrimStart().ToString();
 
         return appToAdd;
     }
@@ -499,7 +491,7 @@ public class Program
 
         var linesSpan = text.AsSpan().Split(Environment.NewLine);
         // Scan lines until starts with "Nome" and contains "ID"
-        while(linesSpan.MoveNext())
+        while (linesSpan.MoveNext())
         {
             if (ValidStartResponse(linesSpan.Source[linesSpan.Current]))
             {
@@ -507,7 +499,7 @@ public class Program
                 break;
             }
         }
-        if(!bValid)
+        if (!bValid)
         {
             return null;
         }
@@ -536,7 +528,7 @@ public class Program
             }
 
             int adjustedIndexID = indexID;
-            while (adjustedIndexID < spanLine.Length - 1 && !char.IsBetween(spanName[^1], '!', '~'))
+            while (adjustedIndexID < spanLine.Length - 1 && !char.IsBetween(spanLine[adjustedIndexID], '!', '~'))
             {
                 adjustedIndexID++;
             }
@@ -591,7 +583,7 @@ public class Program
             try
             {
                 _ = Loader.Wait(config.LoaderSymbols, ctsLoader.Token);
-                await Cli.Wrap(config.WingetCommand).WithArguments([_STR_Ignore, "--id",appToIgnore.strID, "--blocking"], false)
+                await Cli.Wrap(config.WingetCommand).WithArguments([_STR_Ignore, "--id", appToIgnore.strID, "--blocking"], false)
                     .WithStandardOutputPipe(PipeTarget.ToDelegate((str) => config.sbResponse.AppendLine(str)))
                     .ExecuteAsync(ct).ConfigureAwait(false);
             }
