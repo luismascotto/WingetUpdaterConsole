@@ -1,1 +1,1 @@
-dotnet publish -c Release -r win-x64 --sc -o publish
+dotnet publish Consoler\Consoler.csproj -c Release -r win-x64 --sc -o publish

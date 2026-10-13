@@ -503,6 +503,11 @@ public class Program
         {
             return null;
         }
+
+        var textTable = new TextTable(linesSpan.Source[linesSpan.Current]);
+
+
+
         int indexID = linesSpan.Source[linesSpan.Current].IndexOf("ID");
         int IDSize = linesSpan.Source[linesSpan.Current].IndexOf("Vers") - indexID;
         // ---- Separator line
@@ -516,39 +521,16 @@ public class Program
             {
                 break;
             }
-            //When a application name is too long and there is any problem with encoding, sometimes it shifts from ID one or two front or back
-            var spanName = spanLine[..(indexID - 1)].TrimEnd();
-            while (spanName.Length > 0 && !char.IsBetween(spanName[^1], '!', '~'))
-            {
-                spanName = spanName[..^1];
-            }
-            if (spanName.Length == 0)
-            {
-                break;
-            }
-
-            int adjustedIndexID = indexID;
-            while (adjustedIndexID < spanLine.Length - 1 && !char.IsBetween(spanLine[adjustedIndexID], '!', '~'))
-            {
-                adjustedIndexID++;
-            }
-            if (adjustedIndexID > indexID + 4)
-            {
-                //Console.WriteLine($"Erro ao ler {spanName} ({lines[i]})");
-                continue;
-            }
+            var rowValues = textTable.ReadRow(spanLine);
 
             var appToAdd = new App
             {
-                strName = spanName.ToString(),
-                strID = "",
-                strVersion = "",
-                strNewVersion = ""
+                strName = rowValues[0],
+                strID = rowValues[1],
+                strVersion = rowValues[2],
+                strNewVersion = rowValues[3]
             };
 
-            var spanFromId = spanLine[adjustedIndexID..];
-
-            appToAdd = ReadAppIdAndVersions(appToAdd, spanFromId);
 
             apps.Add(appToAdd);
         }
