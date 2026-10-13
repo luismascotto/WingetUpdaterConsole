@@ -8,11 +8,10 @@ namespace Consoler;
 
 public class TextTable
 {
-    public record struct ColumnInfo(string Name, int NameIndex, int StartIndex, int Length);
+    public record struct ColumnInfo(string Name, int StartIndex, int Length);
 
     List<ColumnInfo> _cols;
-    string? _table;
-    int _lineSize;
+
 
     public List<ColumnInfo> Columns => _cols;
 
@@ -21,7 +20,10 @@ public class TextTable
     {
         _cols = ConfigureRows(spanHeaderLine);
     }
-
+    public TextTable(ReadOnlySpan<char> spanHeaderLine, List<string> headers)
+    {
+        _cols = ConfigureRows(spanHeaderLine, headers);
+    }
     public List<string> ReadRow(ReadOnlySpan<char> spanLine)
     {
         var values = new List<string>();
@@ -64,13 +66,13 @@ public class TextTable
             nextInfoIndex = spanHeaderLine[spaceIndex..].IndexOfAnyExcept(' ');
             if (nextInfoIndex < 0)
             {
-                spaceIndex = spanHeaderLine.Length-1;
+                spaceIndex = spanHeaderLine.Length;
             }
             else
             {
                 spaceIndex += nextInfoIndex - 1;
             }
-            cols.Add(new ColumnInfo(colName, colIndex, colIndex, spaceIndex - colIndex));
+            cols.Add(new ColumnInfo(colName, colIndex, spaceIndex - colIndex));
             count = spaceIndex + 1;
         }
 
@@ -83,7 +85,7 @@ public class TextTable
         {
             throw new ArgumentException("Header line is empty", nameof(spanHeaderLine));
         }
-        if (headers.AnySafe())
+        if (!headers.AnySafe())
         {
             throw new ArgumentException("Headers list is empty", nameof(headers));
         }
@@ -91,19 +93,29 @@ public class TextTable
         {
             throw new ArgumentException("Headers has empty entries", nameof(headers));
         }
-        if (headers.Distinct().Count() != headers.Count())
+        if (headers.Distinct().Count() != headers.Count)
         {
             throw new ArgumentException("Headers has duplicate entries", nameof(headers));
         }
 
         List<ColumnInfo> cols = [];
-
+        int nextInfoIndex;
+        int len;
         foreach (var header in headers)
         {
             var index = spanHeaderLine.IndexOf(header.AsSpan(), StringComparison.OrdinalIgnoreCase);
             if (index >= 0)
             {
-                cols.Add(new ColumnInfo(header, index, 0, 0));
+                nextInfoIndex = spanHeaderLine[(index + header.Length)..].IndexOfAnyExcept(' ');
+                if (nextInfoIndex < 0)
+                {
+                    len = spanHeaderLine.Length - index;
+                }
+                else
+                {
+                    len = header.Length + nextInfoIndex - 1;
+                }
+                cols.Add(new ColumnInfo(header, index, len));
             }
         }
 
