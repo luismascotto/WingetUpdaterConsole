@@ -433,7 +433,7 @@ public class Program
     private static App ReadAppIdAndVersions(App appToAdd, ReadOnlySpan<char> spanFromId)
     {
         //New strategy: Since new formats are being created, Cut at the first space for appID
-        // trimStart and trimEnd before 'winget'  the remaining span, then split in the half, then trim both both end
+        // trimStart and trimEnd before 'winget' the remaining span, then split in half, then trim both ends
         // "Example.App   1.2.3 (12345)    1.2.4 (12444)      winget"
         // "Example.App   1.2.3 (12345)    1.2.4 (12444)"
         // 1 - Example.App
