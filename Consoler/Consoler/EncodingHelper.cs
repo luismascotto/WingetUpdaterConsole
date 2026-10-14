@@ -103,7 +103,7 @@ internal class EncodingHelper
 
         // The next check is a heuristic attempt to detect UTF-16 without a BOM. We simply look for
         // zeroes in odd or even byte places, and if a certain threshold is reached, the code is
-        // 'probably' UF-16.
+        // 'probably' UTF-16.
         double threshold = 0.1; // proportion of chars step 2 which must be zeroed to be diagnosed as utf-16. 0.1 = 10%
         int count = 0;
         for (int n = 0; n < taster; n += 2)
