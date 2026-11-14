@@ -172,38 +172,6 @@ public class Functions
         }
     }
 
-    public static async Task WaitEnterKeyUpTo(int timeoutMilliseconds, string message = "")
-    {
-        if (message.HasSomething())
-        {
-            Console.WriteLine(message);
-        }
-        await Task.WhenAny([Task.Delay(timeoutMilliseconds, CancellationToken.None), Task.Run(PressEnter)])
-           .ConfigureAwait(false);
-    }
-
-    public static void PressEnter()
-    {
-        PressAKey(ConsoleKey.Enter);
-    }
-
-    /**
-     * Wait for a specific key press, or any key if ConsoleKey.None is provided
-     * @param key The key to wait for
-     */
-
-    public static void PressAKey(ConsoleKey key = ConsoleKey.None)
-    {
-        do
-        {
-            var keyRead = Console.ReadKey(true);
-            if (key == ConsoleKey.None || keyRead.Key == key)
-            {
-                break;
-            }
-            //await Task.Delay(100, CancellationToken.None);
-        } while (true);
-    }
 
     public static void WriteLineWrapIndented(string? text, int indentSpaces = 0)
     {
@@ -250,5 +218,14 @@ public class Functions
             return responseFile;
         }
         return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, responseFile);
+    }
+
+    public static void WaitEnterKeyUpTo(int timeoutMilliseconds, string message = "")
+    {
+        if (message.HasSomething())
+        {
+            Console.WriteLine(message);
+        }
+        using var keyWaiter = new KeyWaiter(ConsoleKey.Enter, timeoutMilliseconds);
     }
 }

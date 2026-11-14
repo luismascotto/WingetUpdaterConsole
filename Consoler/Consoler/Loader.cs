@@ -93,7 +93,7 @@ public class Loader
             }
             try
             {
-                await Task.Delay(waitMs, cancellationToken);
+                await Task.Delay(waitMs, cancellationToken).ConfigureAwait(false);
                 if (countRandom > 0)
                 {
                     continue;
@@ -241,7 +241,7 @@ public class Loader
 
                     Console.Write(loaderPositions);
                     Console.CursorLeft = currCol;
-                    await Task.Delay(wait2Pattern[iWaitPattern++ % wait2Pattern.Length], cancellationToken);
+                    await Task.Delay(wait2Pattern[iWaitPattern++ % wait2Pattern.Length], cancellationToken).ConfigureAwait(false);
                 }
                 catch
                 {

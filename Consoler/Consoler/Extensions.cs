@@ -75,7 +75,7 @@ public static class Extensions
     public static void PrintAndWait(this Exception ex, string message = "")
     {
         ex.Print(message);
-        Functions.WaitEnterKeyUpTo(30000).Wait();
+        Functions.WaitEnterKeyUpTo(30000);
     }
 
     public static void AppendToTimestampFile(this Exception ex, string path, string nameSuffix)

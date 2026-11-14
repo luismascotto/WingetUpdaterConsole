@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -104,7 +105,7 @@ public class Program
         uint runs = 0;
         while (true)
         {
-            bool flowControl = await ExecuteUpgradeCheckAsync(config, runs).ConfigureAwait(false);
+            bool flowControl = await ExecuteUpgradeCheckAsync(config, runs, CancellationToken.None).ConfigureAwait(false);
             if (!flowControl || ++runs > _QTY_RUNS)
             {
                 break;
@@ -112,7 +113,7 @@ public class Program
         }
     }
 
-    private static async Task<bool> ExecuteUpgradeCheckAsync(Config config, uint runs)
+    private static async Task<bool> ExecuteUpgradeCheckAsync(Config config, uint runs, CancellationToken ct)
     {
         Console.Clear();
         Console.WriteLine("\t\tWINGET");
@@ -145,7 +146,7 @@ public class Program
             {
                 if (runs == 0)
                 {
-                    await Functions.WaitEnterKeyUpTo(1000, "Nenhum update retornado...");
+                    Functions.WaitEnterKeyUpTo(1000, "Nenhum update retornado...");
                 }
                 return false;
             }
@@ -158,7 +159,7 @@ public class Program
             var appsToUpdate = ProcessList(config);
             if (appsToUpdate.Count == 0)
             {
-                await Functions.WaitEnterKeyUpTo(1000, "Nenhum update encontrado...");
+                Functions.WaitEnterKeyUpTo(1000, "Nenhum update encontrado...");
                 return false;
             }
             int available = appsToUpdate.Count(app => app.State == AppListState.Available);
@@ -176,12 +177,12 @@ public class Program
                         }
                     }
                 }
-                await Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi disparado...");
+                Functions.WaitEnterKeyUpTo(2000, "Nenhum update foi disparado...");
                 return false;
             }
 
             int updated = await ProcessUpdatesAsync(config, appsToUpdate.Where(app => app.State == AppListState.Selected), ctsMain.Token).ConfigureAwait(false);
-            await Functions.WaitEnterKeyUpTo(4000, $"{updated}/{selected} Atualizações realizadas");
+            Functions.WaitEnterKeyUpTo(4000, $"{updated}/{selected} Atualizações realizadas");
             return updated > 0 && updated == selected;
         }
         catch (Exception ex)
@@ -417,7 +418,7 @@ public class Program
                         _ = Loader.Wait(loaderSymbols, ctsLoader.Token);
                         break;
                 }
-                Functions.WaitEnterKeyUpTo(600000).Wait();
+                using var keyWaiter = new KeyWaiter(ConsoleKey.Enter, 300 * 1000);
             }
             catch
             {
