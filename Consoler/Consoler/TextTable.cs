@@ -20,10 +20,12 @@ public class TextTable
     {
         _cols = ConfigureRows(spanHeaderLine);
     }
+
     public TextTable(ReadOnlySpan<char> spanHeaderLine, List<string> headers)
     {
         _cols = ConfigureRows(spanHeaderLine, headers);
     }
+
     public List<string> ReadRow(ReadOnlySpan<char> spanLine)
     {
         var values = new List<string>();
@@ -34,6 +36,16 @@ public class TextTable
         }
         return values;
 
+    }
+
+    public string ReadCol(ReadOnlySpan<char> spanLine, string header)
+    {
+        ColumnInfo? colInfo = _cols.FirstOrDefault(c => c.Name.Equals(header, StringComparison.OrdinalIgnoreCase));
+        if (colInfo.HasValue)
+        {
+            return spanLine.Slice(colInfo.Value.StartIndex, colInfo.Value.Length).TrimEnd().ToString();
+        }
+        return "";
     }
 
     public List<ColumnInfo> ConfigureRows(ReadOnlySpan<char> spanHeaderLine)

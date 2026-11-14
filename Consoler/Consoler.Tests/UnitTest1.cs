@@ -64,6 +64,29 @@ public class UnitTest1
 
     }
 
+
+    [Fact]
+    public void TestNamedHeaderProcessing_Reduced()
+    {
+        string header = "Nome                          ID                              Versão              Disponível              Origem";
+
+
+        var headers = new List<string> { "ID", "Versão", "Disponível" };
+        var table = new TextTable(header.AsSpan(), headers);
+
+        Assert.Equal(3, table.Columns.Count);
+
+        var values = table.ReadRow(SpotifyInfo.AsSpan());
+
+        Assert.Equal("Spotify.Spotify", values[0]);
+        Assert.Equal("1.3.3.264.gdaf3b824", values[1]);
+        Assert.Equal("1.3.4.258.gc60b10b0946a", values[2]);
+
+        Assert.Equal("Spotify.Spotify", table.ReadCol(SpotifyInfo.AsSpan(), "id"));
+        // TestSpotifyValues(values);
+
+    }
+
     private void TestSpotifyValues(List<string> values)
     {
         Assert.Equal(5, values.Count);
