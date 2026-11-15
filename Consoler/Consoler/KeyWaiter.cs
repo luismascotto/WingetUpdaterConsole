@@ -22,16 +22,19 @@ sealed class KeyWaiter : IDisposable
     public KeyWaiter(int timeoutMS) : base()
     {
         SetTimeout(timeoutMS);
+        WaitForKeyPress();
     }
     public KeyWaiter(ConsoleKey keyToWaitFor) : base()
     {
         SetKey(keyToWaitFor);
+        WaitForKeyPress();
     }
 
     public KeyWaiter(ConsoleKey keyToWaitFor, long timeoutMS) : base()
     {
         SetTimeout(timeoutMS);
         SetKey(keyToWaitFor);
+        WaitForKeyPress();
     }
 
     private void SetTimeout(long timeoutMS)
@@ -52,7 +55,7 @@ sealed class KeyWaiter : IDisposable
 
     private void WaitForKeyPress()
     {
-        _ = Task.Run(async () =>
+        var task = Task.Run(async () =>
         {
             try
             {
@@ -72,6 +75,7 @@ sealed class KeyWaiter : IDisposable
             }
             catch { }
         });
+        task.Wait();
     }
     public void Dispose()
     {
